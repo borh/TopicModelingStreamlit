@@ -8,14 +8,15 @@
     pkgs.stdenv
     pkgs.gcc
     pkgs.stdenv.cc.cc.lib
+  ] ++ lib.optionals (!pkgs.stdenv.isDarwin) [
     pkgs.cudatoolkit
     pkgs.cudaPackages.cudnn
     pkgs.cudaPackages.nccl
-  ] ++ lib.optionals (!config.container.isBuilding) [
-    pkgs.git
-    pkgs.black
     pkgs.playwright
     pkgs.playwright-driver
+    pkgs.black
+  ] ++ lib.optionals (!config.container.isBuilding) [
+    pkgs.git
   ];
   enterShell = ''
     if [ ! -d 65_novel ]; then
