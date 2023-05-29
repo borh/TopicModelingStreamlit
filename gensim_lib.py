@@ -7,6 +7,7 @@ logging.basicConfig(
 
 import streamlit as st
 import pandas as pd
+import polars as pl
 from gensim.models import LdaModel
 
 # top_topics = model.top_topics(corpus)
@@ -61,6 +62,13 @@ def chunk_tokens(
         labels = []
         authors = []
         chunks = [[]]
+
+        author = (
+            metadata.filter(pl.col("filename") == Path(file).name)
+            .select(pl.col("author_ja"))
+            .head(1)[0]
+        )
+
         current_chunk = 0
         for sentence in sentences:
             tokens = tokenize(
@@ -69,11 +77,12 @@ def chunk_tokens(
             chunks[current_chunk].extend(tokens)
             if len(chunks[current_chunk]) >= chunk_size:
                 labels.append(filename + "_" + str(current_chunk))
-                authors.append(
-                    metadata.query(f'filename == "{Path(file).name}"')
-                    .iloc[0, :]
-                    .author_ja
-                )
+                # authors.append(
+                #     metadata.query(f'filename == "{Path(file).name}"')
+                #     .iloc[0, :]
+                #     .author_ja
+                # )
+                authors.append(author)
                 current_chunk += 1
                 chunks.append([])
         if len(chunks[-1]) < chunk_size:
@@ -82,8 +91,9 @@ def chunk_tokens(
 
 
 @st.cache_data
-def create_chunked_data(metadata, chunksize=2000, tagger=get_tagger()):
+def create_chunked_data(_all_metadata, chunksize=2000, tagger=get_tagger()):
     labels = []
+    filenames = []
     authors = []
     docs = []
     original_docs = []
@@ -94,29 +104,39 @@ def create_chunked_data(metadata, chunksize=2000, tagger=get_tagger()):
         chunk_labels, chunk_authors, chunks = chunk_tokens(
             file,
             tagger,
-            metadata,
+            _all_metadata,
             lemma=True,
             remove_proper_nouns=True,
             chunk_size=chunksize,
         )
 
         labels.extend(chunk_labels)
+        filenames.extend([file.name for _ in range(len(chunk_labels))])
         authors.extend(chunk_authors)
         docs.extend(chunks)
 
         _, _, original_chunks = chunk_tokens(
-            file, tagger, metadata, lemma=False, chunk_size=chunksize
+            file, tagger, _all_metadata, lemma=False, chunk_size=chunksize
         )
         original_docs.extend(original_chunks)
-    metadata = pd.DataFrame(
+    metadata = pl.DataFrame(
         {
-            "authors": authors,
-            "labels": labels,
-            "lengths": [len(d) for d in docs],
+            "author": authors,
+            "label": labels,
+            "filename": filenames,
+            "length": [len(d) for d in docs],
             "docid": range(len(docs)),
         }
     )
-    return metadata, labels, authors, docs, original_docs
+    metadata = _all_metadata.select(
+        pl.col("filename", "genre", "year"),
+        pl.col("author_ja").alias("author"),
+        pl.col("title_ja").alias("title"),
+    ).join(
+        metadata.select(pl.col("filename", "label", "docid", "length")), on="filename"
+    )
+
+    return metadata, docs, original_docs
 
 
 # avg_topic_coherence = sum([t[1] for t in top_topics]) / num_topics
@@ -150,33 +170,15 @@ def create_topic_df(_model):
     return ttm
 
 
-# import plotly.figure_factory as ff
-#
-# fig = ff.create_dendrogram(ttm, orientation='left', distfun=cosine_similarity)
-# fig.update_layout(width=800, height=1400)
-# fig.show()
-#
-#
-# import umap
-#
-# ttm_umap = umap.UMAP(n_components=2, metric='cosine').fit(ttm.T)
-#
-# ttm_df = pd.DataFrame(ttm_umap.embedding_, columns=["x", "y"], index=model.id2word.values())
-#
-# fig = px.scatter(ttm_df, x="x", y="y", labels=model.id2word.values(), text=model.id2word.values())
-# fig.update_traces(textposition="top center")
-# fig.show()
-
-
 def topic2dense(topic_probs, num_topics):
     d = {topic: prob for topic, prob in topic_probs}
     return [d[i] if i in d else 0.0 for i in range(num_topics)]
 
 
 @st.cache_data
-def create_dtm(_model, corpus, labels, metadata, collapsed=True):
+def create_dtm(_model, corpus, authors, collapsed=True):
     dt = [topic2dense(_model.get_document_topics(d), _model.num_topics) for d in corpus]
-    dtm = pd.DataFrame(dt, columns=range(_model.num_topics), index=metadata.authors)
+    dtm = pd.DataFrame(dt, columns=range(_model.num_topics), index=authors)
     if collapsed:
         return dtm.groupby(level=0).mean()
     else:
@@ -187,129 +189,7 @@ def create_dtm_heatmap(dtm):
     return px.imshow(dtm, text_auto=".2f", aspect="auto")
 
 
-import plotly.graph_objects as go
-import plotly.figure_factory as ff
-from sklearn.metrics.pairwise import cosine_similarity
-
-import numpy as np
-from scipy.spatial.distance import pdist, squareform
-
-
-def create_dendrogram_heatmap(data):
-    # get data
-    data_array = data.to_numpy()
-    labels = data.index
-
-    # Initialize figure by creating upper dendrogram
-    # print(data_array)
-    # print(labels)
-    fig = ff.create_dendrogram(
-        data_array, orientation="bottom", labels=labels, distfun=cosine_similarity
-    )
-    for i in range(len(fig["data"])):
-        fig["data"][i]["yaxis"] = "y2"
-
-    # Create Side Dendrogram
-    dendro_side = ff.create_dendrogram(
-        data_array, orientation="right", distfun=cosine_similarity
-    )
-    for i in range(len(dendro_side["data"])):
-        dendro_side["data"][i]["xaxis"] = "x2"
-
-    # Add Side Dendrogram Data to Figure
-    for data in dendro_side["data"]:
-        fig.add_trace(data)
-
-    # Create Heatmap
-    dendro_leaves = dendro_side["layout"]["yaxis"]["ticktext"]
-    dendro_leaves = list(map(int, dendro_leaves))
-    # print(dendro_leaves)
-    data_dist = pdist(data_array)
-    # print(data_array.shape)
-    # print(data_dist.shape)
-    heat_data = squareform(data_dist)
-    # print(heat_data.shape)
-    heat_data = heat_data[dendro_leaves, :]
-    heat_data = heat_data[:, dendro_leaves]
-
-    heat_data = np.triu(heat_data)
-
-    heatmap = [
-        go.Heatmap(x=dendro_leaves, y=dendro_leaves, z=heat_data, colorscale="Blues")
-    ]
-
-    heatmap[0]["x"] = fig["layout"]["xaxis"]["tickvals"]
-    heatmap[0]["y"] = dendro_side["layout"]["yaxis"]["tickvals"]
-
-    # Add Heatmap Data to Figure
-    for data in heatmap:
-        fig.add_trace(data)
-
-    # Edit Layout
-    fig.update_layout(
-        {
-            "width": 1000,
-            "height": 1000,
-            "showlegend": False,
-            "hovermode": "closest",
-        }
-    )
-    # Edit xaxis
-    fig.update_layout(
-        xaxis={
-            "domain": [0.15, 1],
-            "mirror": False,
-            "showgrid": False,
-            "showline": False,
-            "zeroline": False,
-            "ticks": "",
-        }
-    )
-    # Edit xaxis2
-    fig.update_layout(
-        xaxis2={
-            "domain": [0, 0.15],
-            "mirror": False,
-            "showgrid": False,
-            "showline": False,
-            "zeroline": False,
-            "showticklabels": False,
-            "ticks": "",
-        }
-    )
-
-    # Edit yaxis
-    fig.update_layout(
-        yaxis={
-            "domain": [0, 0.85],
-            "mirror": False,
-            "showgrid": False,
-            "showline": False,
-            "zeroline": False,
-            "showticklabels": False,
-            "ticks": "",
-        }
-    )
-    # Edit yaxis2
-    fig.update_layout(
-        yaxis2={
-            "domain": [0.825, 0.975],
-            "mirror": False,
-            "showgrid": False,
-            "showline": False,
-            "zeroline": False,
-            "showticklabels": False,
-            "ticks": "",
-        }
-    )
-
-    # Plot!
-    return fig
-
-
 import plotly.express as px
-
-
 from IPython.display import display, HTML
 
 import matplotlib.pyplot as plt
@@ -426,8 +306,3 @@ def colorize_topics(
             original_docs[docid][position], color[0], top_token_topic, color[1]
         )
     return o + "</div>"
-
-
-# colorize_topics(21)
-
-# model[dictionary.doc2bow(["朝日", "夜", "朝"])]

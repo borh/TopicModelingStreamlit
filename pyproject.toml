@@ -15,12 +15,27 @@ pandas = "^2.0.1"
 numpy = "^1.24.3"
 pyldavis = "^3.4.1"
 umap-learn = "^0.5.3"
-bertopic = "^0.14.1"
+bertopic = { git = "https://github.com/MaartenGr/BERTopic.git", branch = "master" }
 openai = "^0.27.7"
 pyarrow = "^12.0.0"
 matplotlib = "^3.7.1"
 ipython = "^8.13.2"
 stqdm = "^0.0.5"
+xxhash = "^3.2.0"
+filelock = "^3.12.0"
+sudachipy = "^0.6.7"
+sudachidict-full = "^20230110"
+pysbd = "^0.3.4"
+safetensors = "^0.3.1"
+polars = "^0.17.15"
+rhoknp = "^1.3.0"
+cloudpickle = "^2.2.1"
+langchain = "^0.0.183"
+
+[tool.poetry.group.test.dependencies]
+# playwright = "^1.33.0"
+# pytest-playwright = "^0.3.3"
+pytest-xdist = "^3.3.1"
 
 [build-system]
 requires = ["poetry-core"]

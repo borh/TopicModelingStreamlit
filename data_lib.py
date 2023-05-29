@@ -1,5 +1,5 @@
 import streamlit as st
-import pandas as pd
+import polars as pl
 from fugashi import GenericTagger
 
 
@@ -32,25 +32,9 @@ def tokenize(text, tagger, lemma=False, remove_proper_nouns=False):
     return tokens
 
 
-# tokenize("考察する。かなりかかつた。僕は考える")
-# tokenize("考察する。かなりかかつた。僕は考える", lemma=True)
-# tokenize("考察する。かなりかかつた。太郎は大阪城公園で考える。重本さんもそうした玉藻", lemma=True, remove_proper_nouns=True)
-
-
 @st.cache_data
 def get_metadata():
-    metadata = pd.read_csv(
-        "Aozora-Bunko-Fiction-Selection-2022-05-30/groups.csv", sep="\t"
+    metadata_df = pl.read_csv(
+        "Aozora-Bunko-Fiction-Selection-2022-05-30/groups.csv", separator="\t"
     )
-    return metadata
-
-
-import plotly.express as px
-
-
-def chunksizes_by_author_plot(metadata):
-    # df = px.data.tips()
-    fig = px.box(
-        metadata, x="authors", y="lengths", points="all", hover_data=["labels", "docid"]
-    )
-    return fig
+    return metadata_df

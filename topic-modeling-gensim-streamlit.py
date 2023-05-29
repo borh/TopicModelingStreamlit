@@ -10,13 +10,15 @@ st.set_page_config(layout="wide")
 
 from data_lib import *
 from gensim_lib import *
-import re
+import polars as pl
+import plotly.express as px
+import socket
 from io import StringIO
 
 
 st.title("Gensim (LDA) を使用したトピックモデル")
 
-st.sidebar.markdown("## 設定")
+st.sidebar.markdown("## Gensim: 設定")
 
 # Custom HTML:
 # st.components.v1.html(html.data, scrolling=True)
@@ -32,7 +34,7 @@ with c01:
     iterations = st.sidebar.number_input("Iterations", min_value=1, value=2000)
 with c02:
     chunksize = st.sidebar.number_input("Chunksize", min_value=10, value=4000)
-    passes = st.sidebar.number_input("Passes", min_value=1, value=80)
+    passes = st.sidebar.number_input("Passes", min_value=1, value=15)
 eval_every = None  # Don't evaluate model perplexity, takes too much time.
 
 st.sidebar.image("https://upload.wikimedia.org/wikipedia/commons/4/4d/Smoothed_LDA.png")
@@ -49,11 +51,39 @@ st.sidebar.markdown(
 -   $w_{ij}$ is the specific word.
 """
 )
+st.sidebar.text(f"Running on {socket.gethostname()}")
+
 
 all_metadata = get_metadata()
-metadata, labels, authors, docs, original_docs = create_chunked_data(all_metadata)
+metadata, docs, original_docs = create_chunked_data(all_metadata)
 
-st.plotly_chart(chunksizes_by_author_plot(metadata))
+labels_idxs = metadata.get_column("label").to_list()
+authors = set(
+    metadata.select(pl.col("author"))
+    .unique()
+    .sort(pl.col("author"))
+    .get_column("author")
+)
+
+with st.expander("Open to see basic document stats"):
+    st.plotly_chart(
+        px.box(
+            metadata.to_pandas(),
+            x="author",
+            y="length",
+            points="all",
+            hover_data=["label", "docid"],
+        )
+    )
+    st.write(
+        px.box(
+            metadata.to_pandas(),
+            x="genre",
+            y="length",
+            hover_data=["label", "docid"],
+            title="Genre document distribution",
+        )
+    )
 
 
 @st.cache_resource
@@ -119,15 +149,21 @@ model = create_lda_model(
 )
 
 
-from gensim.test.utils import datapath
+# from gensim.test.utils import datapath # Do not use this as it saves into gensim test directory!
+#
+# export = st.checkbox("モデルファイルのエキスポート", value=False)
+#
+# if export:
+#     temp_file = datapath("model")
+#     model.save(temp_file)
+#     st.download_button("トピックモデルファイルのダウンロード", temp_file)
 
-export = st.checkbox("モデルファイルのエキスポート", value=False)
-
-if export:
-    temp_file = datapath("model")
-    model.save(temp_file)
-    st.download_button("トピックモデルファイルのダウンロード", temp_file)
-
+mc1, mc2, mc3, mc4, mc5 = st.columns(5)
+mc1.metric("Works", value=metadata.select(pl.col("title")).n_unique())
+mc2.metric("Docs", value=len(docs))
+mc3.metric("Authors", value=len(authors))
+mc4.metric("Genres", value=metadata.select(pl.col("genre")).n_unique())
+mc5.metric("Topics", value=model.num_topics)
 
 st.markdown("## トピックモデル")
 
@@ -145,18 +181,13 @@ st.write(
     ).T
 )
 
-# st.write([
-#     (topic, token, prob)
-#     for topic_tokens, score in model.top_topics(corpus, topn=10)
-#     for token, prob in topic_tokens])
-
 # st.write(create_topic_df(model))
 
 st.markdown("## 文章トピック行列 (Document-Topic Matrix)")
 
-dtm = create_dtm(model, corpus, labels, metadata)
+dtm = create_dtm(model, corpus, metadata.get_column("author").to_list())
 
-st.markdown("## トピック分布による作家の距離とクラスタ")
+st.markdown("トピック分布による作家の距離とクラスタ")
 
 st.plotly_chart(create_dtm_heatmap(dtm))
 # Look at how this is done in BERTopic:
@@ -169,39 +200,72 @@ pyldavis_str = pyldavis_html(model, corpus, dictionary)
 st.components.v1.html(pyldavis_str, width=1250, height=875, scrolling=True)
 
 st.markdown("## 文章の可視化")
-
 selection_col1, selection_col2 = st.columns(2)
 
 with selection_col1:
-    selected_author = st.selectbox("著者", options=set(authors))
+    selected_author = st.selectbox("著者", options=authors)
+
 author_works = set(
-    metadata[metadata.authors == selected_author]["labels"].apply(
-        lambda s: re.sub(r"_\d+$", ".txt", s)
-    )
-)
-with selection_col2:
-    selected_work = st.selectbox(
-        "作品", options=all_metadata[all_metadata.filename.isin(author_works)]["title_ja"]
-    )
-selected_filename = all_metadata[all_metadata.title_ja == selected_work][
-    "filename"
-].apply(lambda s: s.replace(".txt", ""))
-selected_label = st.select_slider(
-    "作品チャンク",
-    options=metadata[
-        metadata.apply(
-            lambda r: r["labels"].startswith(selected_filename.iloc[0]), axis=1
-        )
-    ]["labels"],
+    metadata.filter(pl.col("author") == selected_author)
+    .select(pl.col("title"))
+    .unique()
+    .sort(pl.col("title"))
+    .to_series()
+    .to_list()
 )
 
-docid = metadata.query(f"labels == '{selected_label}'")["docid"].to_list()[0]
+with selection_col2:
+    selected_work = st.selectbox("作品", options=author_works)
+
+work_docids = (
+    metadata.filter(pl.col("title") == selected_work)
+    .select(pl.col("docid"))
+    .to_series()
+    .to_list()
+)
+
+# Avoid serializing and sending all docids to client; instead use slide min and max values.
+# This works because docids are sequential per author per work.
+doc_id = st.slider(
+    "作品チャンク",
+    min(work_docids),
+    max(work_docids),
+)
 
 st.components.v1.html(
-    colorize_topics(docid, dictionary, model, corpus, docs, original_docs, labels),
+    colorize_topics(
+        doc_id, dictionary, model, corpus, docs, original_docs, labels_idxs
+    ),
     height=500,
     scrolling=True,
 )
+
+tagger = get_tagger()
+
+st.markdown("## 入力テキストのトピック推定")
+# https://www.aozora.gr.jp/cards/002231/files/62105_76819.html
+example_text = st.text_area(
+    "Token topic approximation using embedding model",
+    value="""金の羽根
+昔あるところに、月にもお日さまにも増して美しい一人娘をお持ちの王さまとお妃さまがおりました。娘はたいそうおてんばで、宮殿中の物をひっくり返しては大騒ぎをしていました。""",
+)
+example_tokens = tokenize(example_text, tagger)
+example_bow = dictionary.doc2bow(example_tokens)
+
+st.components.v1.html(
+    colorize_topics(
+        0,
+        dictionary,
+        model,
+        [example_bow],
+        [example_tokens],  # TODO custom
+        [example_tokens],
+        ["example_text"],
+    ),
+    height=500,
+    scrolling=True,
+)
+
 
 st.markdown("## テキストファイルのトピック推定")
 
@@ -215,7 +279,6 @@ if uploaded_file is not None:
     # To read file as string:
     string_data = stringio.read()
 
-    tagger = get_tagger()
     file_tokens = tokenize(string_data, tagger)
     file_bow = dictionary.doc2bow(file_tokens)
 
@@ -225,7 +288,7 @@ if uploaded_file is not None:
             dictionary,
             model,
             [file_bow],
-            [file_tokens],
+            [file_tokens],  # TODO custom
             [file_tokens],
             [uploaded_file.name],
         ),

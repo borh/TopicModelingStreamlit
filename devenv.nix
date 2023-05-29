@@ -1,10 +1,9 @@
-{ pkgs, config, ... }:
+{ pkgs, config, lib, ... }:
 
 {
   packages = [
-    pkgs.git
     pkgs.mecab
-    pkgs.black
+    pkgs.jumanpp
     pkgs.sentencepiece
     pkgs.stdenv
     pkgs.gcc
@@ -12,6 +11,11 @@
     pkgs.cudatoolkit
     pkgs.cudaPackages.cudnn
     pkgs.cudaPackages.nccl
+  ] ++ lib.optionals (!config.container.isBuilding) [
+    pkgs.git
+    pkgs.black
+    pkgs.playwright
+    pkgs.playwright-driver
   ];
   enterShell = ''
     if [ ! -d 65_novel ]; then
@@ -25,45 +29,56 @@
       unzip -xn Aozora-Bunko-Fiction-Selection-2022-05-30.zip
     fi
 
+    export PLAYWRIGHT_BROWSERS_PATH=$(nix build --print-out-paths nixpkgs#playwright-driver.browsers)
     export TOKENIZERS_PARALLELISM=false
     export ZTIP=$(ip -o -4 addr show ztyqb7r673 | awk '{ split($4, ip_addr, "/"); print ip_addr[1] }')
   '';
 
   languages.python = {
     enable = true;
-    package = pkgs.python311;
-    #  (pkgs.python311.withPackages (p: with p; [
-    #    jupyter
-    #    ipykernel
-    #    gensim
-    #    pandas
-    #    numpy
-    #    plotly
-    #    matplotlib
-    #    fugashi
-    #    pyldavis
-    #    umap-learn
-    #    hdbscan
-    #  ]));
+    package = # pkgs.python311;
+      (pkgs.python311.withPackages (p: with p; [
+        playwright
+        # jupyter
+        # ipykernel
+        # gensim
+        # pandas
+        # numpy
+        # plotly
+        # matplotlib
+        # fugashi
+        # pyldavis
+        # umap-learn
+        # hdbscan
+      ]));
     poetry = {
       enable = true;
       activate.enable = true;
     };
   };
+  languages.javascript.enable = true;
 
-  pre-commit.hooks = {
-    shellcheck.enable = true;
-    black.enable = true;
-  };
+  # pre-commit.hooks = {
+  #   shellcheck.enable = true;
+  #   black.enable = true;
+  # };
 
   # Run with:
-  # devenv container serve --docker-run
+  # devenv container bertopic --docker-run
 
-  containers."serve".name = "topic-modeling-streamlit";
-  containers."serve".startupCommand = config.processes.serve.exec;
+  containers.bertopic.name = "topic-modeling-bertopic-streamlit";
+  containers.bertopic.startupCommand = config.processes.serve-bertopic.exec;
+  processes.serve-bertopic.exec = config.scripts.serve-bertopic.exec;
 
-  scripts."serve-bertopic".exec = "streamlit run topic-modeling-bertopic-streamlit.py  --server.port 3331 --server.address $ZTIP --browser.serverAddress nlp.lang.osaka-u.ac.jp --browser.serverPort 443 --server.baseUrlPath tmb-$(hostname)";
-  scripts."serve-gensim".exec = "streamlit run topic-modeling-gensim-streamlit.py  --server.port 3332 --server.address $ZTIP --browser.serverAddress nlp.lang.osaka-u.ac.jp --browser.serverPort 443 --server.baseUrlPath tmg-$(hostname)";
+  containers.gensim.name = "topic-modeling-gensim-streamlit";
+  containers.gensim.startupCommand = config.processes.serve-gensim.exec;
+  processes.serve-gensim.exec = config.scripts.serve-gensim.exec;
+
+  scripts.serve-bertopic.exec = "streamlit run topic-modeling-bertopic-streamlit.py  --server.port 3331 --server.address $ZTIP --browser.serverAddress nlp.lang.osaka-u.ac.jp --browser.serverPort 443 --server.baseUrlPath tmb-$(hostname) --server.headless true";
+  scripts.serve-gensim.exec = "streamlit run topic-modeling-gensim-streamlit.py  --server.port 3332 --server.address $ZTIP --browser.serverAddress nlp.lang.osaka-u.ac.jp --browser.serverPort 443 --server.baseUrlPath tmg-$(hostname) --server.headless true";
+
+  scripts.test-1.exec = "pytest --numprocesses 1 -s playwright_test.py";
+  scripts.stress-test.exec = "pytest --numprocesses 15 -s playwright_test.py";
 
   # See full reference at https://devenv.sh/reference/options/
 }
