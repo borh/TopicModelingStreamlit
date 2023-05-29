@@ -336,7 +336,7 @@ def create_corpus(
                     paragraphs.extend("".join(x) for x in xs)
 
             # A chunks value of 0 returns all data chunks
-            if chunks >= 0:
+            if chunks > 0:
                 paragraphs = paragraphs[:chunks]
 
             docs.extend(paragraphs)
