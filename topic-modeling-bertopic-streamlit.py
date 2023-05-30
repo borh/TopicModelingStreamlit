@@ -223,9 +223,13 @@ class JapaneseTagger:
         ]
 
     def _sudachi_tokenizer_fn(self, s) -> list[str]:
+        # Limit maximum sentence length to Sudachi maximum
+        sentences = [
+            sentence[:5000] for sentence in self.sentence_segmenter.segment(s)
+        ]
         return [
             t.surface()
-            for sentence in self.sentence_segmenter.segment(s)
+            for sentence in sentences
             for t in self.tagger(sentence, self.mode)
             if not self.whitespace_rx.match(t.surface())
         ]
