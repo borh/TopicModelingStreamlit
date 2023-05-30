@@ -783,15 +783,16 @@ def visualize_docs(_topic_model, docs, reduced_embeddings):
 
 st.plotly_chart(visualize_docs(topic_model, docs, reduced_embeddings))
 
-st.write(topic_model.get_topic_info())
+with st.expander("Topic statistics"):
+    st.write(topic_model.get_topic_info())
 
-topic_name_to_id = {
-    r["Name"]: r["Topic"] for _, r in topic_model.get_topic_info().iterrows()
-}
+# topic_name_to_id = {
+#     r["Name"]: r["Topic"] for _, r in topic_model.get_topic_info().iterrows()
+# }
 
-r_topic = st.selectbox("Choose topic", options=topic_name_to_id.keys())
+# r_topic = st.selectbox("Choose topic", options=topic_name_to_id.keys())
 
-st.write(topic_model.get_representative_docs(topic=int(r_topic.split("_")[0])))
+# st.write(topic_model.get_representative_docs(topic=int(r_topic.split("_")[0])))
 
 
 "# Topic information"
