@@ -62,10 +62,10 @@
   };
   languages.javascript.enable = true;
 
-  # pre-commit.hooks = {
-  #   shellcheck.enable = true;
-  #   black.enable = true;
-  # };
+  pre-commit.hooks = {
+    shellcheck.enable = true;
+    black.enable = true;
+  };
 
   # Run with:
   # devenv container bertopic --docker-run
