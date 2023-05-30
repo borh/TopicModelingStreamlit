@@ -111,7 +111,7 @@ if nr_topics_option == 0:
 
 device_option = st.sidebar.radio(
     "Computation mode",
-    [f"cuda:{i}" for i in range(torch.cuda.device_count())] + ["cpu"],
+    ["cpu"] + [f"cuda:{i}" for i in range(torch.cuda.device_count())],
 )
 
 
