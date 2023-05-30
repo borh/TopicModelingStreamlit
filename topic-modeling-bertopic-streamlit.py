@@ -1,12 +1,8 @@
-# import tqdm
-# import stqdm
-
-# tqdm.orignal_class = stqdm.stqdm
-
 import streamlit as st
 
 st.set_page_config(layout="wide")
 
+from stqdm import stqdm
 from bertopic import representation
 from bertopic.representation import KeyBERTInspired
 from sentence_transformers import SentenceTransformer
@@ -335,35 +331,54 @@ def create_corpus(
     filenames = []
     authors = []
     tokenizer = JapaneseTagger(tokenizer_type, dictionary_type)
-    for file in Path("./Aozora-Bunko-Fiction-Selection-2022-05-30/Plain/").glob(
-        "*.txt"
-    ):
+    files = list(
+        Path("./Aozora-Bunko-Fiction-Selection-2022-05-30/Plain/").glob("*.txt")
+    )
+    for file in stqdm(files, desc="Chunking corpus"):
         title = file.stem
         with open(file, encoding="utf-8") as f:
-            paragraphs = []
+            # "doc": list of units of analysis (~paragraph-size text) to pass to embedding model
+            doc = []
+            tokens_chunk = []  # Temporary container for tokens to put in chunk
             for paragraph in f.read().splitlines():
                 if paragraph == "":
                     continue
                 tokens = tokenizer.tokenizer_fn(paragraph)
-                if len(tokens) <= chunksize:
-                    paragraphs.append(paragraph)
-                else:
+                if len(tokens) >= chunksize:
+                    # Add current tokens_chunk
+                    doc.append("".join(tokens_chunk))
+                    # Split tokens into chunksize-size chunks
                     xs = list(split(tokens, chunksize))
-                    paragraphs.extend("".join(x) for x in xs)
+                    last_chunk = xs.pop()
+                    doc.extend("".join(x) for x in xs)
+                    if len(last_chunk) < chunksize:
+                        tokens_chunk = last_chunk
+                    else:
+                        tokens_chunk = []
+                # If adding paragraph to chunk goes over chunksize, commit current chunk to paragraphs and init new chunk with paragraph
+                elif len(tokens) + len(tokens_chunk) > chunksize:
+                    doc.append("".join(tokens_chunk))
+                    tokens_chunk = tokens
+                # Otherwise, add to chunk
+                else:
+                    tokens_chunk.extend(tokens)
+            # Add leftover (partial) chunk to paragraphs
+            if tokens_chunk:
+                doc.append("".join(tokens_chunk))
 
             # A chunks value of 0 returns all data chunks
             if chunks > 0:
-                paragraphs = paragraphs[:chunks]
+                doc = doc[:chunks]
 
-            docs.extend(paragraphs)
-            labels.extend([title for _ in range(len(paragraphs))])
-            filenames.extend([file.name for _ in range(len(paragraphs))])
+            docs.extend(doc)
+            labels.extend([title for _ in range(len(doc))])
+            filenames.extend([file.name for _ in range(len(doc))])
             author = (
                 _all_metadata.filter(pl.col("filename") == Path(file).name)
                 .select(pl.col("author_ja"))
                 .head(1)[0]
             )
-            authors.extend([author for _ in range(len(paragraphs))])
+            authors.extend([author for _ in range(len(doc))])
 
     metadata = pl.DataFrame(
         {
