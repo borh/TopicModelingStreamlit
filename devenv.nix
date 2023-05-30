@@ -20,18 +20,17 @@
     pkgs.black
   ] ++ lib.optionals (!config.container.isBuilding) [
     pkgs.git
-    pkgs.unzip
   ];
   enterShell = ''
     if [ ! -d 65_novel ]; then
       wget -c https://clrd.ninjal.ac.jp/unidic_archive/2203/UniDic-202203_65_novel.zip
-      unzip -xn UniDic-202203_65_novel.zip
+      ${pkgs.unzip}/bin/unzip -xn UniDic-202203_65_novel.zip
       mv 65_novel/.dicrc 65_novel/dicrc
     fi
 
     if [ ! -d Aozora-Bunko-Fiction-Selection-2022-05-30 ]; then
       wget -c https://nlp.lang.osaka-u.ac.jp/files/Aozora-Bunko-Fiction-Selection-2022-05-30.zip
-      unzip -xn Aozora-Bunko-Fiction-Selection-2022-05-30.zip
+      ${pkgs.unzip}/bin/unzip -xn Aozora-Bunko-Fiction-Selection-2022-05-30.zip
     fi
 
     export PLAYWRIGHT_BROWSERS_PATH=$(nix build --print-out-paths nixpkgs#playwright-driver.browsers)

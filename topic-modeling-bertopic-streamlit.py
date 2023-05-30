@@ -407,7 +407,7 @@ def chunksizes_by_author_plot(metadata):
         metadata.to_pandas(),
         x="author",
         y="length",
-        points="all",
+        # points="all", # Too heavy for large amounts
         hover_data=["label", "docid"],  # color="author",
         title="Author document distribution",
     )
