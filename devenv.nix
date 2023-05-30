@@ -5,18 +5,22 @@
     pkgs.mecab
     pkgs.jumanpp
     pkgs.sentencepiece
+  ] ++ lib.optionals pkgs.stdenv.isDarwin [
+    pkgs.llvmPackages_14.stdenv
+  ] ++ lib.optionals (!pkgs.stdenv.isDarwin) [
     pkgs.stdenv
     pkgs.gcc
     pkgs.stdenv.cc.cc.lib
-  ] ++ lib.optionals (!pkgs.stdenv.isDarwin) [
     pkgs.cudatoolkit
     pkgs.cudaPackages.cudnn
     pkgs.cudaPackages.nccl
+    # Dev
     pkgs.playwright
     pkgs.playwright-driver
     pkgs.black
   ] ++ lib.optionals (!config.container.isBuilding) [
     pkgs.git
+    pkgs.unzip
   ];
   enterShell = ''
     if [ ! -d 65_novel ]; then
