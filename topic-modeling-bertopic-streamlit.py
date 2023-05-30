@@ -32,7 +32,7 @@ from pathlib import Path
 import re
 import socket
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import pickle
 import cloudpickle
 import xxhash
@@ -42,11 +42,13 @@ import logging
 
 logging.getLogger("filelock").setLevel(logging.DEBUG)
 
-st.title("BERTopicを使用したトピックモデル")
+st.title("[BERTopic](https://github.com/MaartenGr/BERTopic)を使用したトピックモデル")
 
-st.sidebar.markdown("## BERTopic: 設定")
+st.sidebar.markdown("## [BERTopic](https://github.com/MaartenGr/BERTopic): 設定")
 
-embedding_model_option = st.sidebar.selectbox(
+settings = st.sidebar.form("settings")
+
+embedding_model_option = settings.selectbox(
     "Embedding model",
     [
         "paraphrase-multilingual-MiniLM-L12-v2",
@@ -55,7 +57,7 @@ embedding_model_option = st.sidebar.selectbox(
     ],
 )
 
-representation_model_option = st.sidebar.selectbox(  # Aspects -> multiselectbox
+representation_model_option = settings.selectbox(  # Aspects -> multiselectbox
     "Topic representation",
     [
         "KeyBERTInspired",
@@ -70,38 +72,41 @@ representation_model_option = st.sidebar.selectbox(  # Aspects -> multiselectbox
 
 prompt_option = None
 if representation_model_option and "/" in representation_model_option:
-    prompt_option = st.sidebar.text_area(
+    prompt_option = settings.text_area(
         "Prompt",
         value="""トピックは次のキーワードで特徴付けられている: [KEYWORDS]. これらのキーワードを元に完結にトピックを次の通り要約する: """,
+        label_visibility="collapsed",
     )
     # [KEYWORDS]というキーワードを次の単語で表現する：
 
 
 tdu = {
-    "MeCab": ["UniDic-Novels", "UniDic-CWJ"],
+    "MeCab": ["UniDic-Novels"],
     "Sudachi": ["SudachiDict-full/A", "SudachiDict-full/B", "SudachiDict-full/C"],
     "Juman++": ["Jumandict"],
 }
 
-tokenizer_type_option = st.sidebar.selectbox("Tokenizer", tdu.keys())
-
-dictionary_type_option = st.sidebar.selectbox(
-    "Dictionary",
-    tdu[tokenizer_type_option],
+tokenizer_dictionary_option = settings.selectbox(
+    "Tokenizer and dictionary",
+    [
+        f"{tokenizer}/{dictionary}"
+        for tokenizer, dictionaries in tdu.items()
+        for dictionary in dictionaries
+    ],
 )
 
-chunksize_option = st.sidebar.number_input(
+chunksize_option = settings.number_input(
     "Maximum chunksize",
     min_value=10,
     value=100,
 )
-chunks_option = st.sidebar.number_input(
+chunks_option = settings.number_input(
     "Number of chunks per doc (0 for all)",
     min_value=0,
     value=50,
 )
 
-nr_topics_option = st.sidebar.number_input(
+nr_topics_option = settings.number_input(
     "Reduce to n topics (0 == auto (do not reduce))",
     min_value=0,
     value=0,
@@ -109,9 +114,9 @@ nr_topics_option = st.sidebar.number_input(
 if nr_topics_option == 0:
     nr_topics_option = "auto"
 
-device_option = st.sidebar.radio(
+device_option = settings.radio(
     "Computation mode",
-    ["cpu"] + [f"cuda:{i}" for i in range(torch.cuda.device_count())],
+    [f"cuda:{i}" for i in range(torch.cuda.device_count())] + ["cpu"],
 )
 
 
@@ -120,8 +125,6 @@ def set_options(reload):
         "embedding_model_option",
         "representation_model_option",
         "prompt_option",
-        "tokenizer_type_option",
-        "dictionary_type_option",
         "chunksize_option",
         "chunks_option",
         "nr_topics_option",
@@ -129,18 +132,22 @@ def set_options(reload):
     ]:
         barename = option.replace("_option", "")
         st.session_state[barename] = globals()[option]
+    st.session_state["tokenizer_type"] = tokenizer_dictionary_option.split("/")[0]
+    st.session_state["dictionary_type"] = "/".join(
+        tokenizer_dictionary_option.split("/")[1:]
+    )
     if reload:
         st.session_state["reload"] = True
 
 
-# TODO any way of making this work?
-# submit_all = st.sidebar.button("Compute!", on_click=set_options, args=(True,))
+submit_all = settings.form_submit_button("Compute!", on_click=set_options, args=(True,))
 
-# We need to set options once, to initialize
+# # We need to set options once, to initialize
 set_options(False)
 
 st.sidebar.markdown(
     f"""
+### 参考文献
 -   <https://github.com/MaartenGr/BERTopic>
 -   <https://arxiv.org/abs/2203.05794>
 
@@ -157,7 +164,11 @@ def get_metadata():
     return metadata_df
 
 
-# tagger = get_tagger()
+def split(lst, n):
+    """Yield successive n-sized chunks from lst."""
+    for i in range(0, len(lst), n):
+        yield lst[i : i + n]
+
 
 CustomFeatures = create_feature_wrapper(
     "CustomFeatures",
@@ -187,10 +198,7 @@ class JapaneseTagger:
                 self.tagger = Tagger()
             self.tokenizer_fn = self._mecab_tokenizer_fn
         elif tokenizer_type == "Sudachi":
-            try:
-                sudachi = sudachipy.Dictionary(dict="full").create()
-            except AttributeError:
-                logging.error(f"{sudachipy.Dictionary(dict='full')}")
+            sudachi = sudachipy.Dictionary(dict="full").create()
 
             if dictionary_type.endswith("A"):
                 self.mode = sudachipy.SplitMode.A
@@ -223,16 +231,26 @@ class JapaneseTagger:
         ]
 
     def _sudachi_tokenizer_fn(self, s) -> list[str]:
-        # Limit maximum sentence length to Sudachi maximum
-        sentences = [
-            sentence[:5000] for sentence in self.sentence_segmenter.segment(s)
-        ]
-        return [
-            t.surface()
-            for sentence in sentences
-            for t in self.tagger(sentence, self.mode)
-            if not self.whitespace_rx.match(t.surface())
-        ]
+        sentences = self.sentence_segmenter.segment(s)
+        tokens = []
+        for sentence in sentences:
+            try:
+                tokens.extend(
+                    t.surface()
+                    for t in self.tagger(sentence, self.mode)
+                    if not self.whitespace_rx.match(t.surface())
+                )
+            except Exception:
+                logging.warning(f"Sentence too long for analysis: {sentence}")
+                # Limit maximum sentence length to a reasonable amount (around 2000)
+                token_splits = split(sentence, 2000)
+                tokens.extend(
+                    t.surface()
+                    for ts in token_splits
+                    for t in self.tagger(ts, self.mode)
+                    if not self.whitespace_rx.match(t.surface())
+                )
+        return tokens
 
     def _jumanpp_tokenizer_fn(self, s) -> list[str]:
         return [
@@ -302,12 +320,6 @@ class JapaneseTagger:
 
 
 all_metadata = get_metadata()
-
-
-def split(lst, n):
-    """Yield successive n-sized chunks from lst."""
-    for i in range(0, len(lst), n):
-        yield lst[i : i + n]
 
 
 @st.cache_data
@@ -719,7 +731,7 @@ mc5.metric("Topics", value=len(topic_model.topic_sizes_))
 
 model_creation_time = datetime.fromtimestamp(
     topic_model_path.stat().st_mtime, tz=timezone.utc
-)
+).astimezone(timezone(timedelta(hours=9)))
 
 st.sidebar.write(
     f"Model {topic_model_path} created on {model_creation_time:%Y-%m-%d %H:%M}"
