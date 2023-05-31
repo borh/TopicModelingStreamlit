@@ -7,10 +7,11 @@
     pkgs.sentencepiece
   ] ++ lib.optionals pkgs.stdenv.isDarwin [
     pkgs.llvmPackages_14.stdenv
+    pkgs.llvmPackages_14.stdenv.cc
   ] ++ lib.optionals (!pkgs.stdenv.isDarwin) [
     pkgs.stdenv
-    pkgs.gcc
-    pkgs.stdenv.cc.cc.lib
+    pkgs.stdenv.cc
+    # pkgs.stdenv.cc.cc.lib
     pkgs.cudatoolkit
     pkgs.cudaPackages.cudnn
     pkgs.cudaPackages.nccl
