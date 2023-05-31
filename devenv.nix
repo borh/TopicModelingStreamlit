@@ -9,9 +9,10 @@
     pkgs.llvmPackages_14.stdenv
     pkgs.llvmPackages_14.stdenv.cc
   ] ++ lib.optionals (!pkgs.stdenv.isDarwin) [
+    # build deps
     pkgs.stdenv
     pkgs.stdenv.cc
-    # pkgs.stdenv.cc.cc.lib
+    pkgs.stdenv.cc.cc.lib # runtime dep; comment out when building packages
     pkgs.cudatoolkit
     pkgs.cudaPackages.cudnn
     pkgs.cudaPackages.nccl
