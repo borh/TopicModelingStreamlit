@@ -15,7 +15,7 @@ pandas = "^2.0.1"
 numpy = "^1.24.3"
 pyldavis = "^3.4.1"
 umap-learn = "^0.5.3"
-bertopic = { git = "https://github.com/MaartenGr/BERTopic.git", branch = "master" }
+bertopic = "0.15"
 openai = "^0.27.7"
 pyarrow = "^12.0.0"
 matplotlib = "^3.7.1"

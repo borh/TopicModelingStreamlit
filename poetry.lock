@@ -222,13 +222,15 @@ files = [
 
 [[package]]
 name = "bertopic"
-version = "0.14.1"
+version = "0.15.0"
 description = "BERTopic performs topic Modeling with state-of-the-art transformer models."
 category = "main"
 optional = false
 python-versions = ">=3.7"
-files = []
-develop = false
+files = [
+    {file = "bertopic-0.15.0-py2.py3-none-any.whl", hash = "sha256:a5a04b32d496b1c32864a122d6ece795fbe008e32f6fc11539ff22799bc88cab"},
+    {file = "bertopic-0.15.0.tar.gz", hash = "sha256:96dae6e64b1d9e4ecb65ee97623e7451d00275d53515a3e5fe36adff6f5517e1"},
+]
 
 [package.dependencies]
 hdbscan = ">=0.8.29"
@@ -241,20 +243,14 @@ tqdm = ">=4.41.1"
 umap-learn = ">=0.5.0"
 
 [package.extras]
-dev = ["flair (>=0.7)", "gensim (>=4.0.0)", "mkdocs (==1.1)", "mkdocs-material (==4.6.3)", "mkdocstrings (==0.8.0)", "pytest (>=5.4.3)", "pytest-cov (>=2.6.1)", "spacy (>=3.0.1)", "tensorflow", "tensorflow_hub", "tensorflow_text", "torch (>=1.4.0)", "transformers (>=3.5.1)"]
+dev = ["mkdocs (==1.1)", "mkdocs-material (==4.6.3)", "mkdocstrings (==0.8.0)", "pytest (>=5.4.3)", "pytest-cov (>=2.6.1)"]
 docs = ["mkdocs (==1.1)", "mkdocs-material (==4.6.3)", "mkdocstrings (==0.8.0)"]
 flair = ["flair (>=0.7)", "torch (>=1.4.0)", "transformers (>=3.5.1)"]
 gensim = ["gensim (>=4.0.0)"]
 spacy = ["spacy (>=3.0.1)"]
 test = ["pytest (>=5.4.3)", "pytest-cov (>=2.6.1)"]
-use = ["tensorflow", "tensorflow_hub", "tensorflow_text"]
-vision = ["Pillow (>=9.2.0)"]
-
-[package.source]
-type = "git"
-url = "https://github.com/MaartenGr/BERTopic.git"
-reference = "master"
-resolved_reference = "307a15fbec8fc020261ec73cb75daeb1d2e2f5e9"
+use = ["tensorflow", "tensorflow-hub", "tensorflow-text"]
+vision = ["Pillow (>=9.2.0)", "accelerate (>=0.19.0)"]
 
 [[package]]
 name = "blinker"
@@ -3922,4 +3918,4 @@ testing = ["big-O", "flake8 (<5)", "jaraco.functools", "jaraco.itertools", "more
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.11"
-content-hash = "f89a52f8e3f2df9370260d75c6d526f52d528d7314e6c11ddcf9d30d059cea88"
+content-hash = "32a21512aeb24dc4b3d59170db1bd08c84a3dac5a7ee3c371fc6550f0fd8ed3a"
