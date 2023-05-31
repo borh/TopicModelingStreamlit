@@ -80,8 +80,8 @@
   containers.gensim.startupCommand = config.processes.serve-gensim.exec;
   processes.serve-gensim.exec = config.scripts.serve-gensim.exec;
 
-  scripts.serve-bertopic.exec = "streamlit run topic-modeling-bertopic-streamlit.py --server.port 3331 --server.address $ZTIP --browser.serverAddress nlp.lang.osaka-u.ac.jp --browser.serverPort 443 --server.baseUrlPath topic-modeling-bertopic --server.headless true";
-  scripts.serve-gensim.exec = "streamlit run topic-modeling-gensim-streamlit.py --server.port 3332 --server.address $ZTIP --browser.serverAddress nlp.lang.osaka-u.ac.jp --browser.serverPort 443 --server.baseUrlPath topic-modeling-gensim --server.headless true";
+  scripts.serve-bertopic.exec = "poetry run streamlit run topic-modeling-bertopic-streamlit.py --server.port 3331 --server.address $ZTIP --browser.serverAddress nlp.lang.osaka-u.ac.jp --browser.serverPort 443 --server.baseUrlPath topic-modeling-bertopic --server.headless true";
+  scripts.serve-gensim.exec = "poetry run streamlit run topic-modeling-gensim-streamlit.py --server.port 3332 --server.address $ZTIP --browser.serverAddress nlp.lang.osaka-u.ac.jp --browser.serverPort 443 --server.baseUrlPath topic-modeling-gensim --server.headless true";
 
   scripts.test-1.exec = "pytest --numprocesses 1 -s playwright_test.py";
   scripts.stress-test.exec = "pytest --numprocesses 15 -s playwright_test.py";
