@@ -1,10 +1,37 @@
 { pkgs, config, lib, ... }:
+let
+  unidic-cwj = (
+    let
+      pname = "unidic-cwj";
+      version = "202302";
+    in
+    pkgs.stdenv.mkDerivation {
+      inherit pname version;
 
+      src = pkgs.fetchzip {
+        url = "https://ccd.ninjal.ac.jp/unidic_archive/2302/${pname}-${version}.zip";
+        name = "${pname}-${version}.zip";
+        sha256 = "sha256-VJEbOf6WWg5e0MqoLIzXWeBqf0zw7idMMqoeTHOzsEw=";
+        stripRoot = false;
+      };
+
+      phases = [ "unpackPhase" "installPhase" ];
+      installPhase = ''
+        runHook preInstall
+        install -d $out/share/mecab/dic/$pname
+        install -m 644 dicrc *.def *.bin *.dic $out/share/mecab/dic/$pname
+        runHook postInstall
+      '';
+    }
+  );
+in
 {
+  env.UNIDIC_CWJ_PATH = "${unidic-cwj}/share/mecab/dic/unidic-cwj";
   packages = [
     pkgs.mecab
     pkgs.jumanpp
     pkgs.sentencepiece
+    unidic-cwj
   ] ++ lib.optionals pkgs.stdenv.isDarwin [
     pkgs.llvmPackages_14.stdenv
     pkgs.llvmPackages_14.stdenv.cc
@@ -35,7 +62,21 @@
       ${pkgs.unzip}/bin/unzip -xn Aozora-Bunko-Fiction-Selection-2022-05-30.zip
     fi
 
-    export PLAYWRIGHT_BROWSERS_PATH=$(nix build --print-out-paths nixpkgs#playwright-driver.browsers)
+    if [ ! -d standard-ebooks-selection ]; then
+      wget -c https://nlp.lang.osaka-u.ac.jp/files/standard-ebooks-selection.zip
+      ${pkgs.unzip}/bin/unzip -xn standard-ebooks-selection.zip
+    fi
+
+    test_hosts=(kurent speely)
+    current_hostname=$(hostname)
+    for hostname in "''${test_hosts[@]}"
+    do
+      if [ "$current_hostname" == "$hostname" ]; then
+        export PLAYWRIGHT_BROWSERS_PATH=$(nix build --print-out-paths nixpkgs#playwright-driver.browsers)
+      break 
+    fi
+    done
+
     export TOKENIZERS_PARALLELISM=false
     export ZTIP=$(ip -o -4 addr show ztyqb7r673 | awk '{ split($4, ip_addr, "/"); print ip_addr[1] }')
   '';

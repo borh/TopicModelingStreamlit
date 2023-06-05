@@ -1,33 +1,29 @@
 import streamlit as st
-
-st.set_page_config(layout="wide")
-
 from stqdm import stqdm
-from bertopic import representation
-from bertopic.representation import KeyBERTInspired
 from sentence_transformers import SentenceTransformer
 from umap import UMAP
-from torch import embedding
-
 import pysbd
 from bertopic import BERTopic
-
-# from bertopic.representation import LangChain  # TODO
 import torch
-from transformers import pipeline
-from bertopic.representation import TextGeneration
+from bertopic.representation import (
+    # TextGeneration,
+    # BaseRepresentation,
+    KeyBERTInspired,
+    MaximalMarginalRelevance,
+)
 from sklearn.feature_extraction.text import CountVectorizer
 import rhoknp
 from fugashi import Tagger, GenericTagger, create_feature_wrapper
 import sudachipy
-
+import spacy
 import pandas as pd
 import polars as pl
 import plotly.express as px
 from pathlib import Path
 import re
+import os
 import socket
-
+from typing import Iterator
 from datetime import datetime, timedelta, timezone
 import pickle
 import cloudpickle
@@ -35,80 +31,145 @@ import xxhash
 from filelock import FileLock
 from time import sleep
 import logging
+from data_lib import is_katakana_sentence
+import jaconv
+
+st.set_page_config(layout="wide")
 
 logging.getLogger("filelock").setLevel(logging.DEBUG)
 
-st.title("[BERTopic](https://github.com/MaartenGr/BERTopic)を使用したトピックモデル")
+st.title("BERTopic Playground")
+st.markdown(
+    """
+-   Official documentation: <https://maartengr.github.io/BERTopic/index.html>
+-   Github: <https://github.com/MaartenGr/BERTopic>
+"""
+)
 
-st.sidebar.markdown("## [BERTopic](https://github.com/MaartenGr/BERTopic): 設定")
+st.sidebar.header("BERTopic Settings")
+
+language = st.sidebar.radio("Language", ("Japanese", "English"), 0)
 
 settings = st.sidebar.form("settings")
 
-embedding_model_option = settings.selectbox(
-    "Embedding model",
-    [
-        "paraphrase-multilingual-MiniLM-L12-v2",
-        "pkshatech/simcse-ja-bert-base-clcmlp",
-        # "colorfulscoop/sbert-base-ja", # ValueError: zero-size array to reduction operation maximum which has no identity
-    ],
-)
+tab1, tab2, tab3 = settings.tabs(["Model", "Tokenizer", "Corpus"])
 
-representation_model_option = settings.selectbox(  # Aspects -> multiselectbox
-    "Topic representation",
-    [
-        "KeyBERTInspired",
-        "MaximalMarginalRelevance",
-        # "PartOfSpeech", # Needs spaCy
-        None,
-        # "google/mt5-base",
-        # "rinna/japanese-gpt-neox-3.6b-instruction-sft",
-        # "ChatGPT",
-    ],
-)
-
-prompt_option = None
-if representation_model_option and "/" in representation_model_option:
-    prompt_option = settings.text_area(
-        "Prompt",
-        value="""トピックは次のキーワードで特徴付けられている: [KEYWORDS]. これらのキーワードを元に完結にトピックを次の通り要約する: """,
-        label_visibility="collapsed",
+with tab1:
+    embedding_model_option = st.selectbox(
+        "Embedding model",
+        [
+            "paraphrase-multilingual-MiniLM-L12-v2",
+            "pkshatech/simcse-ja-bert-base-clcmlp",
+        ]
+        if language == "Japanese"
+        else [
+            "all-MiniLM-L12-v2",
+            "all-mpnet-base-v2",
+        ],
     )
-    # [KEYWORDS]というキーワードを次の単語で表現する：
+
+    representation_model_option = st.multiselect(  # Aspects -> multiselectbox
+        "Topic representation",
+        [
+            "KeyBERTInspired",
+            "MaximalMarginalRelevance",
+            "PartOfSpeech",  # Needs spaCy
+            # None,  # Default: most frequent tokens
+            # "google/mt5-base",
+            # "rinna/japanese-gpt-neox-3.6b-instruction-sft",
+            # "ChatGPT",
+        ],
+        ["KeyBERTInspired", "MaximalMarginalRelevance"],
+    )
+    with st.expander(
+        "Explanation [(official documentation)](https://maartengr.github.io/BERTopic/getting_started/multiaspect/multiaspect.html)"
+    ):
+        st.markdown(
+            """
+        Representation models control how topics are labeled.
+        In traditional LDA models, this might be a label such as `12_money_bank_business`, denoting the topic number and the three most frequent tokens in the topic.
+        BERTopic offers multi-aspect representation where multiple representation can be computed at the same time.
+        """
+        )
+
+with tab2:
+    # prompt_option = None
+    # if representation_model_option and "/" in representation_model_option:
+    #     prompt_option = settings.text_area(
+    #         "Prompt",
+    #         value="""トピックは次のキーワードで特徴付けられている: [KEYWORDS]. これらのキーワードを元に完結にトピックを次の通り要約する: """,
+    #         label_visibility="collapsed",
+    #     )
+    #     # [KEYWORDS]というキーワードを次の単語で表現する：
+
+    tdu = {
+        "Japanese": {
+            "MeCab": ["近現代口語小説UniDic", "UniDic-CWJ"],
+            "Sudachi": [
+                "SudachiDict-full/A",
+                "SudachiDict-full/B",
+                "SudachiDict-full/C",
+            ],
+            "spaCy": ["ja_core_news_sm"],
+            "Juman++": ["Jumandict"],
+        },
+        "English": {
+            "spaCy": [
+                "en_core_web_sm",
+                "en_core_web_trf",
+            ]
+        },
+    }
+
+    tokenizer_dictionary_option = st.selectbox(
+        "Tokenizer and dictionary",
+        [
+            f"{tokenizer}/{dictionary}"
+            for tokenizer, dictionaries in tdu[language].items()
+            for dictionary in dictionaries
+        ],
+    )
+
+    tokenizer_features_option = st.multiselect(
+        "Tokenizer: default features to use as token (multiple features will be transformed to surface/POS/... format)",
+        [
+            "orth",
+            "lemma",
+            "pos1",
+        ],
+        ["orth"],
+    )
+
+    tokenizer_pos_filter_option = set(
+        st.multiselect(
+            "Tokenizer: remove selected POS from c-tf-idf",
+            ["symbols/punctuation", "adjectives", "adverbs", "numerals"],
+        )
+    )
+
+    ngram_range_option = st.select_slider("N-gram range", range(1, 5), (1, 1))
 
 
-tdu = {
-    "MeCab": ["UniDic-Novels"],
-    "Sudachi": ["SudachiDict-full/A", "SudachiDict-full/B", "SudachiDict-full/C"],
-    "Juman++": ["Jumandict"],
-}
+with tab3:
+    chunksize_option = st.number_input(
+        "Maximum chunksize",
+        min_value=10,
+        value=100,
+    )
+    chunks_option = st.number_input(
+        "Number of chunks per doc (0 for all)",
+        min_value=0,
+        value=50,
+    )
 
-tokenizer_dictionary_option = settings.selectbox(
-    "Tokenizer and dictionary",
-    [
-        f"{tokenizer}/{dictionary}"
-        for tokenizer, dictionaries in tdu.items()
-        for dictionary in dictionaries
-    ],
-)
+    nr_topics_option = st.number_input(
+        "Reduce to n topics (0 == auto (do not reduce))",
+        min_value=0,
+        value=0,
+    )
+    if nr_topics_option == 0:
+        nr_topics_option = "auto"
 
-chunksize_option = settings.number_input(
-    "Maximum chunksize",
-    min_value=10,
-    value=100,
-)
-chunks_option = settings.number_input(
-    "Number of chunks per doc (0 for all)",
-    min_value=0,
-    value=50,
-)
-
-nr_topics_option = settings.number_input(
-    "Reduce to n topics (0 == auto (do not reduce))",
-    min_value=0,
-    value=0,
-)
-if nr_topics_option == 0:
-    nr_topics_option = "auto"
 
 device_option = settings.radio(
     "Computation mode",
@@ -120,7 +181,10 @@ def set_options(reload):
     for option in [
         "embedding_model_option",
         "representation_model_option",
-        "prompt_option",
+        # "prompt_option",
+        "tokenizer_features_option",
+        "tokenizer_pos_filter_option",
+        "ngram_range_option",
         "chunksize_option",
         "chunks_option",
         "nr_topics_option",
@@ -134,6 +198,11 @@ def set_options(reload):
     )
     if reload:
         st.session_state["reload"] = True
+
+    unique_string = "".join(
+        f"{k}{v}" for k, v in sorted(st.session_state.items()) if k != "unique_id"
+    )
+    st.session_state["unique_id"] = xxhash.xxh3_64_hexdigest(unique_string)
 
 
 submit_all = settings.form_submit_button("Compute!", on_click=set_options, args=(True,))
@@ -153,14 +222,14 @@ Running on {socket.gethostname()}
 
 
 @st.cache_data
-def get_metadata():
+def get_metadata() -> pl.DataFrame:
     metadata_df = pl.read_csv(
         "Aozora-Bunko-Fiction-Selection-2022-05-30/groups.csv", separator="\t"
     )
     return metadata_df
 
 
-def split(lst, n):
+def split(lst: list, n: int) -> Iterator[list]:
     """Yield successive n-sized chunks from lst."""
     for i in range(0, len(lst), n):
         yield lst[i : i + n]
@@ -178,20 +247,37 @@ CustomFeatures = create_feature_wrapper(
 
 
 class JapaneseTagger:
-    def __init__(self, tokenizer_type, dictionary_type, ngram_range=(1, 1)):
+    def __init__(
+        self,
+        tokenizer_type: str,
+        dictionary_type: str,
+        ngram_range: tuple[int, int] = (1, 1),
+        features: list[str] | None = None,
+        pos_filter: set[str] | None = None,
+        language: str = "Japanese",
+    ):
         self.tokenizer_type = tokenizer_type
         self.dictionary_type = dictionary_type
         self.ngram_range = ngram_range
-        self.sentence_segmenter = pysbd.Segmenter(language="ja", clean=False)
+        self.features = features
+        self.pos_filter = pos_filter
+        self.sentence_segmenter = pysbd.Segmenter(
+            language="ja" if language == "Japanese" else "en", clean=False
+        )
         self.whitespace_rx = re.compile(r"^\s*$")
         if tokenizer_type == "MeCab":
-            if dictionary_type == "UniDic-Novels":
+            self.pos_filter_fn = (
+                lambda t: t.pos in self.pos_filter if self.pos_filter else True
+            )
+            if dictionary_type == "近現代口語小説UniDic":
                 self.tagger = GenericTagger(
                     "-r ./65_novel/dicrc -d ./65_novel/ -Owakati",
                     wrapper=CustomFeatures,
                 )
             else:
-                self.tagger = Tagger()
+                # TODO other dictionaries
+                dic_path = os.environ["UNIDIC_CWJ_PATH"]
+                self.tagger = Tagger(f"-d {dic_path}")
             self.tokenizer_fn = self._mecab_tokenizer_fn
         elif tokenizer_type == "Sudachi":
             sudachi = sudachipy.Dictionary(dict="full").create()
@@ -206,6 +292,10 @@ class JapaneseTagger:
                 raise Exception(f"Unknown dictionary: {dictionary_type}")
             self.tagger = sudachi.tokenize
             self.tokenizer_fn = self._sudachi_tokenizer_fn
+        elif tokenizer_type == "spaCy":
+            nlp = spacy.load(dictionary_type)
+            self.tagger = nlp
+            self.tokenizer_fn = self._spacy_tokenizer_fn
         elif tokenizer_type == "Juman++":
             jumanpp = rhoknp.Jumanpp()
             self.tagger = jumanpp.apply_to_sentence
@@ -214,47 +304,104 @@ class JapaneseTagger:
         self.vectorizer = CountVectorizer(
             ngram_range=self.ngram_range,
             tokenizer=self.tokenizer_fn,
-            lowercase=False,
+            lowercase=False if language == "Japanese" else True,
             token_pattern=r".+",
         )
 
+    def _mecab_features_fn(self, t) -> str:
+        mapping = {
+            "orth": lambda t: t.surface,
+            "pos1": lambda t: t.feature.pos,
+            # Unknown/OOV words will get surface form returned
+            "lemma": lambda t: t.feature.lemma or t.surface,
+        }
+        if not self.features:
+            return t.surface
+        else:
+            return "/".join(mapping[feature](t) for feature in self.features)
+
     def _mecab_tokenizer_fn(self, s) -> list[str]:
         return [
-            t.surface
+            self._mecab_features_fn(t)
             for sentence in self.sentence_segmenter.segment(s)
             for t in self.tagger(sentence)
-            if not self.whitespace_rx.match(t.surface)
+            if not self.whitespace_rx.match(t.surface) or not self.pos_filter_fn(t)
         ]
+
+    def _sudachi_features_fn(self, t) -> str:
+        mapping = {
+            "orth": lambda t: t.surface(),
+            "pos1": lambda t: t.part_of_speech()[0],
+            "lemma": lambda t: t.normalized_form(),
+        }
+        if not self.features:
+            return t.surface()
+        else:
+            return "/".join(mapping[feature](t) for feature in self.features)
 
     def _sudachi_tokenizer_fn(self, s) -> list[str]:
         sentences = self.sentence_segmenter.segment(s)
-        tokens = []
+        tokens: list[str] = []
         for sentence in sentences:
             try:
                 tokens.extend(
-                    t.surface()
+                    self._sudachi_features_fn(t)
                     for t in self.tagger(sentence, self.mode)
                     if not self.whitespace_rx.match(t.surface())
+                    or (
+                        self.pos_filter and not t.part_of_speech()[0] in self.pos_filter
+                    )
                 )
             except Exception:
                 logging.warning(f"Sentence too long for analysis: {sentence}")
                 # Limit maximum sentence length to a reasonable amount (around 2000)
                 token_splits = split(sentence, 2000)
                 tokens.extend(
-                    t.surface()
+                    self._sudachi_features_fn(t)
                     for ts in token_splits
                     for t in self.tagger(ts, self.mode)
                     if not self.whitespace_rx.match(t.surface())
+                    or (
+                        self.pos_filter and not t.part_of_speech()[0] in self.pos_filter
+                    )
                 )
         return tokens
 
-    def _jumanpp_tokenizer_fn(self, s) -> list[str]:
+    def _spacy_tokenizer_fn(self, s) -> list[str]:
+        mapping = {
+            "orth": lambda t: t.text,
+            "pos1": lambda t: t.pos_,
+            "lemma": lambda t: t.lemma_,
+            "text_with_ws": lambda t: t.text_with_ws,
+        }
+        sentences = self.sentence_segmenter.segment(s)  # might need workaround above
         return [
-            t.text
+            "/".join(mapping[feature](t) for feature in self.features)
+            for t in self.tagger.pipe(sentences, disable=["parser", "ner"])
+            if not self.whitespace_rx.match(t.text)
+            and not (self.pos_filter and t.pos_ in self.pos_filter)
+        ]
+
+    def _jumanpp_features_fn(self, t) -> str:
+        mapping = {
+            "orth": lambda t: t.text,
+            "pos1": lambda t: t.pos,
+            "lemma": lambda t: t.lemma,
+        }
+        if not self.features:
+            return t.text
+        else:
+            return "/".join(mapping[feature](t) for feature in self.features)
+
+    def _jumanpp_tokenizer_fn(self, s) -> list[str]:
+        tokens = [
+            self._jumanpp_features_fn(t)
             for sentence in self.sentence_segmenter.segment(s)
             for t in self.tagger(sentence).morphemes
             if not self.whitespace_rx.match(t.text)
+            and not (self.pos_filter and t.pos in self.pos_filter)
         ]
+        return tokens
 
     def __getstate__(self):
         logging.error("getstate")
@@ -262,6 +409,8 @@ class JapaneseTagger:
             self.tokenizer_type,
             self.dictionary_type,
             self.ngram_range,
+            self.features,
+            self.pos_filter,
             self._mecab_tokenizer_fn,
             self._sudachi_tokenizer_fn,
             self._jumanpp_tokenizer_fn,
@@ -273,13 +422,19 @@ class JapaneseTagger:
             self.tokenizer_type,
             self.dictionary_type,
             self.ngram_range,
+            self.features,
+            self.pos_filter,
             self._mecab_tokenizer_fn,
             self._sudachi_tokenizer_fn,
             self._jumanpp_tokenizer_fn,
         ) = state
         # Restore from initial params
         self.__init__(
-            self.tokenizer_type, self.dictionary_type, ngram_range=self.ngram_range
+            self.tokenizer_type,
+            self.dictionary_type,
+            ngram_range=self.ngram_range,
+            features=self.features,
+            pos_filter=self.pos_filter,
         )
 
     # def __reduce__(self):
@@ -318,39 +473,65 @@ class JapaneseTagger:
 all_metadata = get_metadata()
 
 
+# Note that we do not take token filtering or features into account in corpus creation
+# as this is also used for embedding model.
 @st.cache_data
 def create_corpus(
     _all_metadata,
+    language: str,
     chunksize: int,
     chunks: int,
     tokenizer_type: str,
     dictionary_type: str,
-):
+) -> tuple[list[str], pl.DataFrame]:
     docs = []
     labels = []
     filenames = []
     authors = []
-    tokenizer = JapaneseTagger(tokenizer_type, dictionary_type)
+    if language == "Japanese":
+        tokenizer = JapaneseTagger(tokenizer_type, dictionary_type, language=language)
+    else:
+        # We use spaCy's Token.text_with_ws to be able to use same logic as with
+        # Japanese version when joining back tokens.
+        tokenizer = JapaneseTagger(
+            tokenizer_type,
+            dictionary_type,
+            language=language,
+            features=["text_with_ws"],
+        )
+
     files = list(
         Path("./Aozora-Bunko-Fiction-Selection-2022-05-30/Plain/").glob("*.txt")
+        if language == "Japanese"
+        else Path("./standard-ebooks-selection/").glob("*.txt")
     )
     for file in stqdm(files, desc="Chunking corpus"):
+        logging.error(file)
         title = file.stem
         with open(file, encoding="utf-8") as f:
             # "doc": list of units of analysis (~paragraph-size text) to pass to embedding model
-            doc = []
-            tokens_chunk = []  # Temporary container for tokens to put in chunk
+            doc: list[str] = []
+            # Temporary container for tokens to put in chunk
+            tokens_chunk: list[str] = []
+            running_count = 0
             for paragraph in f.read().splitlines():
+                if chunks > 0 and running_count >= chunks:
+                    logging.warning("Ending early.")
+                    break
                 if paragraph == "":
                     continue
+                if language == "Japanese" and is_katakana_sentence(paragraph):
+                    paragraph = jaconv.kata2hira(paragraph)
                 tokens = tokenizer.tokenizer_fn(paragraph)
                 if len(tokens) >= chunksize:
                     # Add current tokens_chunk
                     doc.append("".join(tokens_chunk))
+                    running_count += 1
                     # Split tokens into chunksize-size chunks
                     xs = list(split(tokens, chunksize))
                     last_chunk = xs.pop()
                     doc.extend("".join(x) for x in xs)
+                    running_count += len(xs)
                     if len(last_chunk) < chunksize:
                         tokens_chunk = last_chunk
                     else:
@@ -358,6 +539,7 @@ def create_corpus(
                 # If adding paragraph to chunk goes over chunksize, commit current chunk to paragraphs and init new chunk with paragraph
                 elif len(tokens) + len(tokens_chunk) > chunksize:
                     doc.append("".join(tokens_chunk))
+                    running_count += 1
                     tokens_chunk = tokens
                 # Otherwise, add to chunk
                 else:
@@ -402,6 +584,7 @@ def create_corpus(
 
 docs, metadata = create_corpus(
     all_metadata,
+    language,
     st.session_state.chunksize,
     st.session_state.chunks,
     st.session_state.tokenizer_type,
@@ -478,31 +661,39 @@ with st.expander("Open to see basic document stats"):
 
 # @st.cache_resource
 def calculate_model(
-    docs, vectorizer, embedding_model, representation_model, prompt, nr_topics
+    docs: list[str],
+    vectorizer: CountVectorizer,
+    embedding_model: str,
+    representation_model: list[str],
+    prompt: str | None,
+    nr_topics: str | int,
 ):
     if representation_model:
+        representation_models = {}
+
         # if representation_model == "ChatGPT":
         #     representation_model = get_openai()
-        if representation_model == "KeyBERTInspired":
-            representation_model = KeyBERTInspired()
-        elif representation_model == "MaximalMarginalRelevance":
-            representation_model = representation.MaximalMarginalRelevance(
-                diversity=0.5
-            )
+        representation_models["Main"] = KeyBERTInspired()
+        if "KeyBERTInspired" in representation_model:
+            representation_models["KeyBERTInspired"] = KeyBERTInspired()
+        if "MaximalMarginalRelevance" in representation_model:
+            representation_models[
+                "MaximalMarginalRelevance"
+            ] = MaximalMarginalRelevance(diversity=0.5)
         # Only with spaCy:
         # elif representation_model == "PartOfSpeech":
         #     representation_model = representation.PartOfSpeech()
-        elif representation_model and "/" in representation_model:
-            if not prompt:
-                prompt = "I have a topic described by the following keywords: [KEYWORDS]. Based on the previous keywords, what is this topic about?"
-            generator = pipeline("text2text-generation", model=representation_model)
-            representation_model = TextGeneration(generator, prompt=prompt)
-        else:
-            raise Exception(f"Unsupported representation model {representation_model}")
+        # elif representation_model and "/" in representation_model:
+        #     if not prompt:
+        #         prompt = "I have a topic described by the following keywords: [KEYWORDS]. Based on the previous keywords, what is this topic about?"
+        #     generator = pipeline("text2text-generation", model=representation_model)
+        #     representation_model = TextGeneration(generator, prompt=prompt)
+        # else:
+        #     raise Exception(f"Unsupported representation model {representation_model}")
         topic_model = BERTopic(
             embedding_model=embedding_model,
             vectorizer_model=vectorizer,
-            representation_model=representation_model,
+            representation_model=representation_models,
             verbose=True,
             calculate_probabilities=True,
             nr_topics=nr_topics,
@@ -547,13 +738,17 @@ def save_computed(
 
 # As long as this function does not do any unneccessary work, it should be the same as @st.cache or better
 def load_and_persist_model(
-    docs,
-    embedding_model,
-    representation_model,
-    prompt,
-    nr_topics,
-    tokenizer_type,
-    dictionary_type,
+    docs: list[str],
+    language: str,
+    embedding_model: str,
+    representation_model: list[str],
+    prompt: str | None,
+    nr_topics: str | int,
+    tokenizer_type: str,
+    dictionary_type: str,
+    ngram_range: tuple[int, int],
+    tokenizer_features: list[str],
+    tokenizer_pos_filter: set[str] | None,
     topic_model=None,
     embeddings=None,
     reduced_embeddings=None,
@@ -561,10 +756,26 @@ def load_and_persist_model(
     probs=None,
 ):
     docs_hash = xxhash.xxh3_64_hexdigest(pickle.dumps(docs, pickle.HIGHEST_PROTOCOL))
-    representation_id = ""
-    if representation_model:
-        representation_id = f"{representation_model.replace('/', '_')}-{xxhash.xxh3_64_hexdigest(prompt) if prompt else ''}-"
-    filename = f"{docs_hash}-{tokenizer_type}-{dictionary_type.replace('/', '_')}-{embedding_model.replace('/', '_')}-{representation_id}{nr_topics}"
+    settings_hash = xxhash.xxh3_64_hexdigest(
+        pickle.dumps(
+            (
+                representation_model,
+                prompt,
+                nr_topics,
+                tokenizer_type,
+                dictionary_type,
+                ngram_range,
+                tokenizer_features,
+                tokenizer_pos_filter,
+            ),
+            pickle.HIGHEST_PROTOCOL,
+        )
+    )
+    # representation_id = ""
+    # if representation_model:
+    #     representation_id = f"{'_'.join(k.replace('/', '_') for k in representation_model)}-{xxhash.xxh3_64_hexdigest(prompt) if prompt else ''}-"
+    # filename = f"{docs_hash}-{tokenizer_type}-{dictionary_type.replace('/', '_')}-{tokenizer_features}-{tokenizer_pos_filter}-{embedding_model.replace('/', '_')}-{representation_id}{nr_topics}"
+    filename = f"{docs_hash}-{settings_hash}"
     path = Path(f"cache/{filename}")
     lock_path = Path(f"{path}.lock")
     logging.info(f"Lock not yet created at {lock_path}. Assuming first writer.")
@@ -601,7 +812,14 @@ def load_and_persist_model(
                     probs,
                 ) = calculate_model(
                     docs,
-                    JapaneseTagger(tokenizer_type, dictionary_type).vectorizer,
+                    JapaneseTagger(
+                        tokenizer_type,
+                        dictionary_type,
+                        ngram_range=ngram_range,
+                        features=tokenizer_features,
+                        pos_filter=tokenizer_pos_filter,
+                        language=language,
+                    ).vectorizer,
                     embedding_model,
                     representation_model,
                     prompt,
@@ -627,7 +845,7 @@ def load_and_persist_model(
         chech_finished = Path(f"{path}.finished")
         logging.warning(f"Loading precomputed model {path}")
         if chech_finished.exists():
-            topic_model = BERTopic.load(path, embedding_model=embedding_model)
+            topic_model = BERTopic.load(str(path), embedding_model=embedding_model)
             # Currently not restored correctly:
             # https://github.com/MaartenGr/BERTopic/blob/master/bertopic/_save_utils.py#L334
             # topic_model.vectorizer_model.tokenizer = tokenizer.tokenizer_fn
@@ -650,12 +868,16 @@ def load_and_persist_model(
             sleep(1)
             return load_and_persist_model(
                 docs,
+                language,
                 embedding_model,
                 representation_model,
                 prompt,
                 nr_topics,
                 tokenizer_type,
                 dictionary_type,
+                ngram_range,
+                tokenizer_features,
+                tokenizer_pos_filter,
                 topic_model=topic_model,
                 embeddings=embeddings,
                 reduced_embeddings=reduced_embeddings,
@@ -687,12 +909,16 @@ def load_and_persist_model(
     probs,
 ) = load_and_persist_model(
     docs,
+    language,
     st.session_state.embedding_model,
     st.session_state.representation_model,
-    st.session_state.prompt,
+    None,  # st.session_state.prompt,
     st.session_state.nr_topics,
     st.session_state.tokenizer_type,
     st.session_state.dictionary_type,
+    st.session_state.ngram_range,
+    st.session_state.tokenizer_features,
+    st.session_state.tokenizer_pos_filter,
 )
 
 
@@ -708,12 +934,16 @@ if topic_model.nr_topics != st.session_state.nr_topics:
         probs,
     ) = load_and_persist_model(
         docs,
+        language,
         st.session_state.embedding_model,
         st.session_state.representation_model,
-        st.session_state.prompt,
+        None,  # st.session_state.prompt,
         st.session_state.nr_topics,
         st.session_state.tokenizer_type,
         st.session_state.dictionary_type,
+        st.session_state.ngram_range,
+        st.session_state.tokenizer_features,
+        st.session_state.tokenizer_pos_filter,
         topic_model=topic_model,
         embeddings=embeddings,
         reduced_embeddings=reduced_embeddings,
@@ -729,12 +959,25 @@ elif (
     logging.warning(f"Loading model on nr_topics change: {st.session_state.nr_topics}")
     if st.session_state.nr_topics == None:
         st.session_state.nr_topics = "auto"
-    topic_model_path, topic_model, embeddings, topics, probs = load_and_persist_model(
+    (
+        topic_model_path,
+        topic_model,
+        embeddings,
+        reduced_embeddings,
+        topics,
+        probs,
+    ) = load_and_persist_model(
         docs,
+        language,
         st.session_state.embedding_model,
         st.session_state.representation_model,
-        st.session_state.prompt,
+        None,  # st.session_state.prompt,
         st.session_state.nr_topics,
+        st.session_state.tokenizer_type,
+        st.session_state.dictionary_type,
+        st.session_state.ngram_range,
+        st.session_state.tokenizer_features,
+        st.session_state.tokenizer_pos_filter,
     )
 
 mc1, mc2, mc3, mc4, mc5 = st.columns(5)
@@ -752,7 +995,13 @@ st.sidebar.write(
     f"Model {topic_model_path} created on {model_creation_time:%Y-%m-%d %H:%M}"
 )
 
-st.write(topic_model.visualize_topics())
+
+@st.cache_data
+def cached_visualize_topics(unique_id):
+    return topic_model.visualize_topics()
+
+
+st.write(cached_visualize_topics(st.session_state.unique_id))
 
 "# Corpus topic browser"
 
@@ -807,15 +1056,39 @@ if not st.session_state.representation_model:
 "# Document and topic 2D plot (UMAP)"
 
 
-# @st.cache_data
-def visualize_docs(_topic_model, docs, reduced_embeddings):
-    return _topic_model.visualize_documents(docs, reduced_embeddings=reduced_embeddings)
+@st.cache_data
+def visualize_docs(unique_id, docs, reduced_embeddings):
+    return topic_model.visualize_documents(docs, reduced_embeddings=reduced_embeddings)
 
 
-st.plotly_chart(visualize_docs(topic_model, docs, reduced_embeddings))
+st.plotly_chart(visualize_docs(st.session_state.unique_id, docs, reduced_embeddings))
+
+
+@st.cache_data
+def get_topic_info(unique_id):
+    return topic_model.get_topic_info()[
+        [
+            "Topic",
+            "Count",
+            "Name",
+            "Representation",
+            # FIXME Multi-aspect representations return a list of word, freqs that do not serialize with PyArrow; drop for now
+        ]
+    ]
+
 
 with st.expander("Topic statistics"):
-    st.write(topic_model.get_topic_info())
+    st.write(get_topic_info(st.session_state.unique_id))
+    st.write(
+        pl.DataFrame(
+            (
+                (aspect, topic_id, ", ".join(token for token, freq in token_freqs))
+                for aspect, aspect_topics in topic_model.topic_aspects_.items()
+                for topic_id, token_freqs in aspect_topics.items()
+            ),
+            schema=["Representation model", "Topic", "Tokens"],
+        ).to_pandas()
+    )
 
 # topic_name_to_id = {
 #     r["Name"]: r["Topic"] for _, r in topic_model.get_topic_info().iterrows()
@@ -838,7 +1111,7 @@ ttab1, ttab2, ttab3 = st.tabs(
 ttab1.plotly_chart(topic_model.visualize_hierarchy())
 ttab2.plotly_chart(topic_model.visualize_heatmap())
 topics_per_class = topic_model.topics_per_class(
-    docs, classes=metadata.get_column("genre")
+    docs, classes=metadata.get_column("genre").to_list()
 )
 ttab3.plotly_chart(
     topic_model.visualize_topics_per_class(
@@ -868,12 +1141,12 @@ if topic_query != "":
 "# Topic inference"
 
 
-def visualize_text(topic_model, doc):
+def visualize_text(unique_id, doc, use_embedding_model):
     """Wrapper for token-level topic visualization. Currently, using the cf-tfifdf model is broken,
     so we use the embedding model instead."""
-    topic_distr, topic_token_distr = topic_model.approximate_distribution(
+    _topic_distr, topic_token_distr = topic_model.approximate_distribution(
         doc,
-        use_embedding_model=True,
+        use_embedding_model=use_embedding_model,
         calculate_tokens=True,
         min_similarity=0.001,
         separator="",  # No whitespace for Japanese
@@ -885,11 +1158,16 @@ def visualize_text(topic_model, doc):
     return df
 
 
+use_embedding_model_option = st.checkbox("Use embedding model", False)
+
 # https://www.aozora.gr.jp/cards/002231/files/62105_76819.html
 example_text = st.text_area(
-    "Token topic approximation using embedding model",
+    f"Token topic approximation using {'embedding' if use_embedding_model_option else 'c-tf-idf'} model",
     value="""金の羽根
 昔あるところに、月にもお日さまにも増して美しい一人娘をお持ちの王さまとお妃さまがおりました。娘はたいそうおてんばで、宮殿中の物をひっくり返しては大騒ぎをしていました。""",
 )
 
-st.write(visualize_text(topic_model, example_text))
+
+st.write(
+    visualize_text(st.session_state.unique_id, example_text, use_embedding_model_option)
+)
