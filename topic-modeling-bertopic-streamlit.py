@@ -588,13 +588,15 @@ def create_corpus(
         }
     )
 
-    metadata = all_metadata.select(
-        pl.col("filename", "genre", "year"),
-        pl.col("author_ja").alias("author"),
-        pl.col("title_ja").alias("title"),
-    ).join(
-        metadata.select(pl.col("filename", "label", "docid", "length")), on="filename"
-    )
+    if not all_metadata.is_empty():
+        metadata = all_metadata.select(
+            pl.col("filename", "genre", "year"),
+            pl.col("author_ja").alias("author"),
+            pl.col("title_ja").alias("title"),
+        ).join(
+            metadata.select(pl.col("filename", "label", "docid", "length")),
+            on="filename",
+        )
     return docs, metadata
 
 
@@ -1048,14 +1050,15 @@ work_docids = (
 
 # Avoid serializing and sending all docids to client; instead use slide min and max values.
 # This works because docids are sequential per author per work.
-doc_id = st.slider(
-    "作品チャンク",
-    min(work_docids),
-    max(work_docids),
-)
+if work_docids:
+    doc_id = st.slider(
+        "作品チャンク",
+        min(work_docids),
+        max(work_docids),
+    )
 
-st.markdown(f"> {docs[doc_id]}")
-st.write(topic_model.visualize_distribution(probs[doc_id], min_probability=0.0))
+    st.markdown(f"> {docs[doc_id]}")
+    st.write(topic_model.visualize_distribution(probs[doc_id], min_probability=0.0))
 
 if not st.session_state.representation_model:
     st.markdown("# Topic word browser")
@@ -1096,16 +1099,16 @@ def get_topic_info(unique_id):
 
 with st.expander("Topic statistics"):
     st.write(get_topic_info(st.session_state.unique_id))
-    st.write(
-        pl.DataFrame(
-            (
-                (aspect, topic_id, ", ".join(token for token, freq in token_freqs))
-                for aspect, aspect_topics in topic_model.topic_aspects_.items()
-                for topic_id, token_freqs in aspect_topics.items()
-            ),
-            schema=["Representation model", "Topic", "Tokens"],
-        ).to_pandas()
-    )
+    # st.write(
+    #     pl.DataFrame(
+    #         (
+    #             (aspect, topic_id, ", ".join(token for token, freq in token_freqs))
+    #             for aspect, aspect_topics in topic_model.topic_aspects_.items()
+    #             for topic_id, token_freqs in aspect_topics.items()
+    #         ),
+    #         schema=["Representation model", "Topic", "Tokens"],
+    #     ).to_pandas()
+    # )
 
 # topic_name_to_id = {
 #     r["Name"]: r["Topic"] for _, r in topic_model.get_topic_info().iterrows()
@@ -1127,14 +1130,16 @@ ttab1, ttab2, ttab3 = st.tabs(
 )
 ttab1.plotly_chart(topic_model.visualize_hierarchy())
 ttab2.plotly_chart(topic_model.visualize_heatmap())
-topics_per_class = topic_model.topics_per_class(
-    docs, classes=metadata.get_column("genre").to_list()
-)
-ttab3.plotly_chart(
-    topic_model.visualize_topics_per_class(
-        topics_per_class, top_n_topics=len(topic_model.topic_sizes_)
+
+if not metadata.is_empty():
+    topics_per_class = topic_model.topics_per_class(
+        docs, classes=metadata.get_column("genre").to_list()
     )
-)
+    ttab3.plotly_chart(
+        topic_model.visualize_topics_per_class(
+            topics_per_class, top_n_topics=len(topic_model.topic_sizes_)
+        )
+    )
 
 st.markdown("# Topic query")
 
@@ -1178,10 +1183,14 @@ def visualize_text(unique_id, doc, use_embedding_model):
 use_embedding_model_option = st.checkbox("Use embedding model", False)
 
 # https://www.aozora.gr.jp/cards/002231/files/62105_76819.html
+# https://mysterytribune.com/suspense-novel-excerpt-the-echo-killing-by-christi-daugherty/
 example_text = st.text_area(
     f"Token topic approximation using {'embedding' if use_embedding_model_option else 'c-tf-idf'} model",
     value="""金の羽根
-昔あるところに、月にもお日さまにも増して美しい一人娘をお持ちの王さまとお妃さまがおりました。娘はたいそうおてんばで、宮殿中の物をひっくり返しては大騒ぎをしていました。""",
+昔あるところに、月にもお日さまにも増して美しい一人娘をお持ちの王さまとお妃さまがおりました。娘はたいそうおてんばで、宮殿中の物をひっくり返しては大騒ぎをしていました。"""
+    if language == "Japanese"
+    else """It was one of those nights.
+Early on there was a flicker of hope— a couple of stabbings, a car wreck with potential. But the wounds weren’t serious and the accident was routine. After that it fell quiet.""",
 )
 
 
