@@ -48,7 +48,13 @@ st.markdown(
 
 st.sidebar.header("BERTopic Settings")
 
-language = st.sidebar.radio("Language", ("Japanese", "English"), 0)
+
+language = st.sidebar.radio(
+    "Language",
+    ("Japanese", "English"),
+    0,
+    horizontal=True,
+)
 
 settings = st.sidebar.form("settings")
 
@@ -522,7 +528,11 @@ def create_corpus(
                     continue
                 if language == "Japanese" and is_katakana_sentence(paragraph):
                     paragraph = jaconv.kata2hira(paragraph)
-                tokens = tokenizer.tokenizer_fn(paragraph)
+                if language == "Japanese":
+                    tokens = tokenizer.tokenizer_fn(paragraph)
+                else:
+                    tokens = paragraph.split()
+                logging.error(f"tokens: {len(tokens)}")
                 if len(tokens) >= chunksize:
                     # Add current tokens_chunk
                     doc.append("".join(tokens_chunk))
@@ -628,17 +638,18 @@ def chunksizes_by_author_plot(metadata):
     return fig
 
 
-with st.expander("Open to see basic document stats"):
-    st.write(chunksizes_by_author_plot(metadata))
-    st.write(
-        px.box(
-            metadata.to_pandas(),
-            x="genre",
-            y="length",
-            hover_data=["label", "docid"],
-            title="Genre document distribution",
+if not metadata.is_empty():
+    with st.expander("Open to see basic document stats"):
+        st.write(chunksizes_by_author_plot(metadata))
+        st.write(
+            px.box(
+                metadata.to_pandas(),
+                x="genre",
+                y="length",
+                hover_data=["label", "docid"],
+                title="Genre document distribution",
+            )
         )
-    )
 
 # import openai
 #
