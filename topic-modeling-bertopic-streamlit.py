@@ -538,7 +538,6 @@ def create_corpus(
                     tokens = tokenizer.tokenizer_fn(paragraph)
                 else:
                     tokens = paragraph.split()
-                logging.error(f"tokens: {len(tokens)}")
                 if len(tokens) >= chunksize:
                     # Add current tokens_chunk
                     doc.append(sep.join(tokens_chunk))
