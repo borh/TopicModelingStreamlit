@@ -137,7 +137,7 @@ with tab2:
     )
 
     tokenizer_features_option = st.multiselect(
-        "Tokenizer: default features to use as token (multiple features will be transformed to surface/POS/... format)",
+        "Default token representation (multiple selections will be formatted as surface/POS/... etc.)",
         [
             "orth",
             "lemma",
@@ -148,8 +148,45 @@ with tab2:
 
     tokenizer_pos_filter_option = set(
         st.multiselect(
-            "Tokenizer: remove selected POS from c-tf-idf",
-            ["symbols/punctuation", "adjectives", "adverbs", "numerals"],
+            "Remove POS",
+            [
+                "名詞",
+                "代名詞",
+                "形状詞",
+                "連体詞",
+                "副詞",
+                "接続詞",
+                "感動詞",
+                "動詞",
+                "形容詞",
+                "助動詞",
+                "助詞",
+                "接頭辞",
+                "接尾辞",
+                "記号",
+                "補助記号",
+                "空白",
+            ]
+            if language == "Japanese"
+            else [
+                "ADJ",
+                "ADP",
+                "PUNCT",
+                "ADV",
+                "AUX",
+                "SYM",
+                "INTJ",
+                "CCONJ",
+                "X",
+                "NOUN",
+                "DET",
+                "PROPN",
+                "NUM",
+                "VERB",
+                "PART",
+                "PRON",
+                "SCONJ",
+            ],
         )
     )
 
@@ -276,7 +313,7 @@ class JapaneseTagger:
         self.whitespace_rx = re.compile(r"^\s*$")
         if tokenizer_type == "MeCab":
             self.pos_filter_fn = (
-                lambda t: t.pos in self.pos_filter if self.pos_filter else True
+                lambda t: t.feature.pos1 in self.pos_filter if self.pos_filter else True
             )
             if dictionary_type == "近現代口語小説UniDic":
                 self.tagger = GenericTagger(
@@ -334,7 +371,7 @@ class JapaneseTagger:
             self._mecab_features_fn(t)
             for sentence in self.sentence_segmenter.segment(s)
             for t in self.tagger(sentence)
-            if not self.whitespace_rx.match(t.surface) or not self.pos_filter_fn(t)
+            if not self.whitespace_rx.match(t.surface) and not self.pos_filter_fn(t)
         ]
 
     def _sudachi_features_fn(self, t) -> str:
@@ -357,7 +394,7 @@ class JapaneseTagger:
                     self._sudachi_features_fn(t)
                     for t in self.tagger(sentence, self.mode)
                     if not self.whitespace_rx.match(t.surface())
-                    or (
+                    and not (
                         self.pos_filter and not t.part_of_speech()[0] in self.pos_filter
                     )
                 )
@@ -370,7 +407,7 @@ class JapaneseTagger:
                     for ts in token_splits
                     for t in self.tagger(ts, self.mode)
                     if not self.whitespace_rx.match(t.surface())
-                    or (
+                    and not (
                         self.pos_filter and not t.part_of_speech()[0] in self.pos_filter
                     )
                 )
