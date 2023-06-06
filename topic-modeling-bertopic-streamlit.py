@@ -205,7 +205,7 @@ def set_options(reload):
     if reload:
         st.session_state["reload"] = True
 
-    unique_strig = (
+    unique_string = (
         "".join(
             f"{k}{v}" for k, v in sorted(st.session_state.items()) if k != "unique_id"
         )
@@ -378,16 +378,17 @@ class JapaneseTagger:
 
     def _spacy_tokenizer_fn(self, s) -> list[str]:
         mapping = {
-            "orth": lambda t: t.text,
+            "orth": lambda t: t.orth_,
             "pos1": lambda t: t.pos_,
             "lemma": lambda t: t.lemma_,
             "text_with_ws": lambda t: t.text_with_ws,
         }
-        sentences = self.sentence_segmenter.segment(s)  # might need workaround above
+        sentences = self.sentence_segmenter.segment(s)
         return [
             "/".join(mapping[feature](t) for feature in self.features)
-            for t in self.tagger.pipe(sentences, disable=["parser", "ner"])
-            if not self.whitespace_rx.match(t.text)
+            for doc in self.tagger.pipe(sentences, disable=["parser", "ner"])
+            for t in doc
+            if not self.whitespace_rx.match(t.orth_)
             and not (self.pos_filter and t.pos_ in self.pos_filter)
         ]
 
