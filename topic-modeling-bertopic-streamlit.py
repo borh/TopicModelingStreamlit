@@ -1059,6 +1059,12 @@ if work_docids:
 
     st.markdown(f"> {docs[doc_id]}")
     st.write(topic_model.visualize_distribution(probs[doc_id], min_probability=0.0))
+    with st.expander(
+        "Explanation (Official documentation)[https://maartengr.github.io/BERTopic/getting_started/distribution/distribution.html]"
+    ):
+        st.markdown(
+            """The topic distributions presented here are approximated using a sliding window over the document. For each window, its c-TF-IDF representation is used to find out how similar it is to all topics, and the final distribution is a sum over all windows."""
+        )
 
 if not st.session_state.representation_model:
     st.markdown("# Topic word browser")
