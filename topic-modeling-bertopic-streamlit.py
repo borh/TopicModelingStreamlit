@@ -205,8 +205,11 @@ def set_options(reload):
     if reload:
         st.session_state["reload"] = True
 
-    unique_string = "".join(
-        f"{k}{v}" for k, v in sorted(st.session_state.items()) if k != "unique_id"
+    unique_strig = (
+        "".join(
+            f"{k}{v}" for k, v in sorted(st.session_state.items()) if k != "unique_id"
+        )
+        + language
     )
     st.session_state["unique_id"] = xxhash.xxh3_64_hexdigest(unique_string)
 
@@ -496,6 +499,7 @@ def create_corpus(
     authors = []
     if language == "Japanese":
         tokenizer = JapaneseTagger(tokenizer_type, dictionary_type, language=language)
+        sep = ""
     else:
         # We use spaCy's Token.text_with_ws to be able to use same logic as with
         # Japanese version when joining back tokens.
@@ -505,6 +509,7 @@ def create_corpus(
             language=language,
             features=["text_with_ws"],
         )
+        sep = " "
 
     files = list(
         Path("./Aozora-Bunko-Fiction-Selection-2022-05-30/Plain/").glob("*.txt")
@@ -535,12 +540,12 @@ def create_corpus(
                 logging.error(f"tokens: {len(tokens)}")
                 if len(tokens) >= chunksize:
                     # Add current tokens_chunk
-                    doc.append("".join(tokens_chunk))
+                    doc.append(sep.join(tokens_chunk))
                     running_count += 1
                     # Split tokens into chunksize-size chunks
                     xs = list(split(tokens, chunksize))
                     last_chunk = xs.pop()
-                    doc.extend("".join(x) for x in xs)
+                    doc.extend(sep.join(x) for x in xs)
                     running_count += len(xs)
                     if len(last_chunk) < chunksize:
                         tokens_chunk = last_chunk
@@ -548,7 +553,7 @@ def create_corpus(
                         tokens_chunk = []
                 # If adding paragraph to chunk goes over chunksize, commit current chunk to paragraphs and init new chunk with paragraph
                 elif len(tokens) + len(tokens_chunk) > chunksize:
-                    doc.append("".join(tokens_chunk))
+                    doc.append(sep.join(tokens_chunk))
                     running_count += 1
                     tokens_chunk = tokens
                 # Otherwise, add to chunk
@@ -556,7 +561,7 @@ def create_corpus(
                     tokens_chunk.extend(tokens)
             # Add leftover (partial) chunk to paragraphs
             if tokens_chunk:
-                doc.append("".join(tokens_chunk))
+                doc.append(sep.join(tokens_chunk))
 
             # A chunks value of 0 returns all data chunks
             if chunks > 0:
