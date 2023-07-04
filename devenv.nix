@@ -39,15 +39,6 @@ in
     # Build deps
     pkgs.stdenv
     pkgs.stdenv.cc
-    pkgs.llvmPackages_14.stdenv # 10 is max supported by llvm-lite version currently used
-    pkgs.llvmPackages_14.stdenv.cc # 10 is max supported by llvm-lite version currently used
-    pkgs.llvmPackages_14.libllvm # 10 is max supported by llvm-lite version currently used
-    # Moved to LD_LIBRARY_PATH
-    # pkgs.stdenv.cc.cc.lib # runtime dep; comment out when building packages
-    # pkgs.cudatoolkit
-    # pkgs.cudaPackages.cudnn
-    # pkgs.cudaPackages.nccl
-
     # Dev
     pkgs.playwright
     pkgs.playwright-driver
