@@ -36,13 +36,18 @@ in
     pkgs.llvmPackages_14.stdenv
     pkgs.llvmPackages_14.stdenv.cc
   ] ++ lib.optionals (!pkgs.stdenv.isDarwin) [
-    # build deps
+    # Build deps
     pkgs.stdenv
     pkgs.stdenv.cc
-    pkgs.stdenv.cc.cc.lib # runtime dep; comment out when building packages
-    pkgs.cudatoolkit
-    pkgs.cudaPackages.cudnn
-    pkgs.cudaPackages.nccl
+    pkgs.llvmPackages_14.stdenv # 10 is max supported by llvm-lite version currently used
+    pkgs.llvmPackages_14.stdenv.cc # 10 is max supported by llvm-lite version currently used
+    pkgs.llvmPackages_14.libllvm # 10 is max supported by llvm-lite version currently used
+    # Moved to LD_LIBRARY_PATH
+    # pkgs.stdenv.cc.cc.lib # runtime dep; comment out when building packages
+    # pkgs.cudatoolkit
+    # pkgs.cudaPackages.cudnn
+    # pkgs.cudaPackages.nccl
+
     # Dev
     pkgs.playwright
     pkgs.playwright-driver
@@ -50,6 +55,28 @@ in
   ] ++ lib.optionals (!config.container.isBuilding) [
     pkgs.git
   ];
+
+  env.LD_LIBRARY_PATH = lib.mkIf pkgs.stdenv.isLinux (
+    lib.makeLibraryPath (with pkgs; [
+      gcc-unwrapped.lib
+      linuxPackages_latest.nvidia_x11
+      zlib
+      cmake
+      cudaPackages.cudatoolkit
+      cudaPackages.cudnn
+      cudaPackages.libcublas
+      cudaPackages.libcurand
+      cudaPackages.libcufft
+      cudaPackages.libcusparse
+      cudaPackages.cuda_nvtx
+      cudaPackages.cuda_cupti
+      cudaPackages.cuda_nvrtc
+      cudaPackages.nccl
+    ])
+  );
+  env.CUDA_HOME = "${pkgs.cudaPackages.cudatoolkit}";
+  env.CUDA_PATH = "${pkgs.cudaPackages.cudatoolkit}";
+
   enterShell = ''
     if [ ! -d 65_novel ]; then
       wget -c https://clrd.ninjal.ac.jp/unidic_archive/2203/UniDic-202203_65_novel.zip

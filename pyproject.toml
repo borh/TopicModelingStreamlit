@@ -33,6 +33,7 @@ cloudpickle = "^2.2.1"
 langchain = "^0.0.183"
 spacy = "^3.5.3"
 jaconv = "^0.3.4"
+llvmlite = "^0.40.0"
 
 [tool.poetry.dependencies.en_core_web_trf]
 url = "https://github.com/explosion/spacy-models/releases/download/en_core_web_trf-3.5.0/en_core_web_trf-3.5.0-py3-none-any.whl"
