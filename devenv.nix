@@ -1,6 +1,6 @@
 { pkgs, config, lib, ... }:
 let
-  unidic-cwj = (
+  unidic-cwj =
     let
       pname = "unidic-cwj";
       version = "202302";
@@ -22,12 +22,8 @@ let
         install -m 644 dicrc *.def *.bin *.dic $out/share/mecab/dic/$pname
         runHook postInstall
       '';
-    }
-  );
-in
-{
-  env.UNIDIC_CWJ_PATH = "${unidic-cwj}/share/mecab/dic/unidic-cwj";
-  packages = [
+    };
+  runtimePackages = [
     pkgs.mecab
     pkgs.jumanpp
     pkgs.sentencepiece
@@ -36,13 +32,10 @@ in
     pkgs.llvmPackages_14.stdenv
     pkgs.llvmPackages_14.stdenv.cc
   ] ++ lib.optionals (!pkgs.stdenv.isDarwin) [
-    # build deps
+    # Build deps
     pkgs.stdenv
     pkgs.stdenv.cc
-    pkgs.stdenv.cc.cc.lib # runtime dep; comment out when building packages
-    pkgs.cudatoolkit
-    pkgs.cudaPackages.cudnn
-    pkgs.cudaPackages.nccl
+    pkgs.gcc-unwrapped.lib
     # Dev
     pkgs.playwright
     pkgs.playwright-driver
@@ -50,6 +43,36 @@ in
   ] ++ lib.optionals (!config.container.isBuilding) [
     pkgs.git
   ];
+  cuda = false;
+in
+lib.attrsets.recursiveUpdate
+{
+  packages = runtimePackages;
+
+  env.UNIDIC_CWJ_PATH = "${unidic-cwj}/share/mecab/dic/unidic-cwj";
+  env.LD_LIBRARY_PATH = lib.mkIf pkgs.stdenv.isLinux
+    (lib.makeLibraryPath
+      (
+        runtimePackages ++
+        (with pkgs; [
+          zlib
+          cmake
+          libdrm
+        ] ++ lib.optionals cuda [
+          linuxPackages_latest.nvidia_x11
+          cudaPackages.cudatoolkit
+          cudaPackages.cudnn
+          cudaPackages.libcublas
+          cudaPackages.libcurand
+          cudaPackages.libcufft
+          cudaPackages.libcusparse
+          cudaPackages.cuda_nvtx
+          cudaPackages.cuda_cupti
+          cudaPackages.cuda_nvrtc
+          cudaPackages.nccl
+        ])
+      ));
+
   enterShell = ''
     if [ ! -d 65_novel ]; then
       wget -c https://clrd.ninjal.ac.jp/unidic_archive/2203/UniDic-202203_65_novel.zip
@@ -129,3 +152,9 @@ in
 
   # See full reference at https://devenv.sh/reference/options/
 }
+  # recursiveUpdate:
+  (if cuda then
+    {
+      env.CUDA_HOME = "${pkgs.cudaPackages.cudatoolkit}";
+      env.CUDA_PATH = "${pkgs.cudaPackages.cudatoolkit}";
+    } else { })
