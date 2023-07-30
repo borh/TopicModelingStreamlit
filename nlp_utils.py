@@ -503,6 +503,7 @@ def load_and_persist_model(
     settings_hash = xxhash.xxh3_64_hexdigest(
         pickle.dumps(
             (
+                embedding_model,
                 representation_model,
                 prompt,
                 nr_topics,
