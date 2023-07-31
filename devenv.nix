@@ -35,7 +35,6 @@ let
     # Build deps
     pkgs.stdenv
     pkgs.stdenv.cc
-    pkgs.gcc-unwrapped.lib
     # Dev
     pkgs.playwright
     pkgs.playwright-driver
@@ -43,7 +42,8 @@ let
   ] ++ lib.optionals (!config.container.isBuilding) [
     pkgs.git
   ];
-  cuda = false;
+  cuda = true;
+  rocm = false;
 in
 lib.attrsets.recursiveUpdate
 {
@@ -57,6 +57,8 @@ lib.attrsets.recursiveUpdate
         (with pkgs; [
           zlib
           cmake
+          gcc-unwrapped.lib
+        ] ++ lib.optionals rocm [
           libdrm
         ] ++ lib.optionals cuda [
           linuxPackages_latest.nvidia_x11

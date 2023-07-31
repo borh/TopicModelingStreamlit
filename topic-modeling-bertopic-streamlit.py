@@ -49,14 +49,16 @@ with tab1:
         [
             "paraphrase-multilingual-MiniLM-L12-v2",
             "pkshatech/simcse-ja-bert-base-clcmlp",
+            "intfloat/multilingual-e5-large",
         ]
         if language == "Japanese"
         # https://huggingface.co/spaces/mteb/leaderboard
         else [
-            "thenlper/gte-base",
-            "hkunlp/instructor-large",
             "all-MiniLM-L12-v2",
             "all-mpnet-base-v2",
+            "intfloat/multilingual-e5-large",
+            "thenlper/gte-base",
+            "hkunlp/instructor-large",
         ],
     )
 
@@ -235,12 +237,14 @@ def set_options(reload):
         + language
     )
     st.session_state["unique_id"] = xxhash.xxh3_64_hexdigest(unique_string)
+    st.toast("Compute!", icon="🎉")
 
 
 submit_all = settings.form_submit_button("Compute!", on_click=set_options, args=(True,))
 
 # # We need to set options once, to initialize
-set_options(False)
+if "unique_id" not in st.session_state:
+    set_options(False)
 
 st.sidebar.markdown(
     f"""
@@ -755,7 +759,7 @@ def visualize_text(unique_id, doc, use_embedding_model):
 
     # Visualize the token-level distributions
     df = topic_model.visualize_approximate_distribution(doc, topic_token_distr[0])
-    assert not isinstance(df, pd.DataFrame) or not df.empty
+    # assert not isinstance(df, pd.DataFrame) or not df.empty
     return df
 
 

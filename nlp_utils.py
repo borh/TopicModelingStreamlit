@@ -257,6 +257,7 @@ class LanguageProcessor:
         ngram_range: tuple[int, int] = (1, 1),
         features: list[str] | None = None,
         pos_filter: set[str] | None = None,
+        vocabulary: dict[str, int] | None = None,
     ):
         self.language = language
         self.segmenter = pysbd.Segmenter(
@@ -282,14 +283,24 @@ class LanguageProcessor:
 
         self.ngram_range = ngram_range
 
-        self.vectorizer = CountVectorizer(
-            ngram_range=self.ngram_range,
-            tokenizer=self.tokenizer.tokenize,
-            lowercase=False if language == "Japanese" else True,
-            token_pattern=r".+",  # i.e. no pattern; take all
-        )
+        self.vocabulary = vocabulary
 
-        # FIXME remove
+        if self.vocabulary is not None:
+            self.vectorizer = CountVectorizer(
+                ngram_range=self.ngram_range,
+                tokenizer=self.tokenizer.tokenize,
+                lowercase=False if language == "Japanese" else True,
+                token_pattern=r".+",  # i.e. no pattern; take all
+                vocabulary=vocabulary,
+            )
+        else:
+            self.vectorizer = CountVectorizer(
+                ngram_range=self.ngram_range,
+                tokenizer=self.tokenizer.tokenize,
+                lowercase=False if language == "Japanese" else True,
+                token_pattern=r".+",  # i.e. no pattern; take all
+            )
+
         if self.language == "English":
             assert isinstance(self.tokenizer, SpacyTokenizer)
             assert isinstance(self.dictionary, SpacyDictionary)
@@ -325,6 +336,7 @@ class LanguageProcessor:
             self.ngram_range,
             self.features,
             self.pos_filter,
+            self.vocabulary,
         )
 
     def __setstate__(self, state):
@@ -336,6 +348,7 @@ class LanguageProcessor:
             self.ngram_range,
             self.features,
             self.pos_filter,
+            self.vocabulary,
         ) = state
         # Restore from initial params
         self.__init__(
@@ -345,6 +358,7 @@ class LanguageProcessor:
             ngram_range=self.ngram_range,
             features=self.features,
             pos_filter=self.pos_filter,
+            vocabulary=self.vocabulary,
         )
 
 
@@ -461,8 +475,8 @@ def calculate_model(
 def save_computed(
     path, vectorizer_model, topics, probs, embeddings, reduced_embeddings
 ):
-    # with open(f"{path}-vectorizer_model.pickle", "wb") as f:
-    #     pickle.dump(vectorizer_model, f)
+    with open(f"{path}-vectorizer_model_vocabulary.pickle", "wb") as f:
+        pickle.dump(vectorizer_model.vocabulary_, f)
     with open(f"{path}-topics.pickle", "wb") as f:
         pickle.dump(topics, f, pickle.HIGHEST_PROTOCOL)
     with open(f"{path}-probs.pickle", "wb") as f:
@@ -594,11 +608,18 @@ def load_and_persist_model(
             topic_model = BERTopic.load(str(path), embedding_model=embedding_model)
             # # Currently not restored correctly:
             # # https://github.com/MaartenGr/BERTopic/blob/master/bertopic/_save_utils.py#L334
-            # # topic_model.vectorizer_model.tokenizer = tokenizer.tokenize
-            # topic_model.vectorizer_model = vectorizer # restore vectorizer
-
-            # with open(f"{path}-vectorizer_model.pickle", "rb") as f:
-            #     topic_model.vectorizer_model = pickle.load(f)
+            # We save and load only the vocabulary to prevent native code pickle errors.
+            with open(f"{path}-vectorizer_model_vocabulary.pickle", "rb") as f:
+                v = pickle.load(f)
+                topic_model.vectorizer_model = LanguageProcessor(
+                    tokenizer_type=tokenizer_type,
+                    dictionary_type=dictionary_type,
+                    ngram_range=ngram_range,
+                    features=tokenizer_features,
+                    pos_filter=tokenizer_pos_filter,
+                    language=language,
+                    vocabulary=v,
+                ).vectorizer
 
             with open(f"{path}-topics.pickle", "rb") as f:
                 topics = pickle.load(f)

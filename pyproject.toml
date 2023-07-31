@@ -36,8 +36,12 @@ jaconv = "^0.3.4"
 pydantic = "^1.10.9"
 numba = "^0.57.1"
 
-torch = {version = "^2.0.1+cpu", source = "pytorch-cpu"}
-torchvision = {version = "^0.15.2+cpu", source = "pytorch-cpu"}
+# https://download.pytorch.org/whl/torch_stable.html
+# https://download.pytorch.org/whl/nightly/torch_nightly.html
+torch = {version = "^2.1.0.dev20230727+cu121", allow-prereleases = true, platform = "linux", source = "pytorch-cuda"}
+pytorch-triton = {version = "^2.1.0+e6216047b8", allow-prereleases = true, platform = "linux", source = "pytorch-cuda"}
+# Only used as dependency, but note that torchvision on day X needs (may need) torch from day X-1:
+# torchvision = {version = "^0.16.0.dev20230727+cu121", allow-prereleases = true, platform = "linux", source = "pytorch-cuda"}
 
 [tool.poetry.dependencies.en_core_web_trf]
 url = "https://github.com/explosion/spacy-models/releases/download/en_core_web_trf-3.6.1/en_core_web_trf-3.6.1-py3-none-any.whl"
@@ -60,7 +64,7 @@ priority = "explicit"
 
 [[tool.poetry.source]]
 name = "pytorch-cuda"
-url = "https://download.pytorch.org/whl/cu118"
+url = "https://download.pytorch.org/whl/nightly/cu121"
 priority = "explicit"
 
 [[tool.poetry.source]]
