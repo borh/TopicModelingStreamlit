@@ -4,7 +4,7 @@ version = "0.1.0"
 description = ""
 authors = ["Bor Hodošček <dev@bor.space>"]
 readme = "README.md"
-packages = [{include = "topic_modeling_streamlit"}]
+# packages = [{include = "topic_modeling_streamlit"}]
 
 [tool.poetry.dependencies]
 python = "^3.11"
@@ -34,13 +34,6 @@ jaconv = "^0.3.4"
 pydantic = "^1.10.9"
 numba = "^0.57.1"
 
-# https://download.pytorch.org/whl/torch_stable.html
-# https://download.pytorch.org/whl/nightly/torch_nightly.html
-torch = {version = "2.1.0.dev20230727+cu121", allow-prereleases = true, platform = "linux", source = "pytorch-cuda"}
-pytorch-triton = {version = "2.1.0+9e3e10c5ed", allow-prereleases = true, platform = "linux", source = "pytorch-cuda"}
-# Only used as dependency, but note that torchvision on day X needs (may need) torch from day X-1:
-torchvision = {version = "0.16.0.dev20230727+cu121", allow-prereleases = true, platform = "linux", source = "pytorch-cuda"}
-
 [tool.poetry.dependencies.en_core_web_trf]
 url = "https://github.com/explosion/spacy-models/releases/download/en_core_web_trf-3.6.1/en_core_web_trf-3.6.1-py3-none-any.whl"
 
@@ -54,6 +47,31 @@ url = "https://github.com/explosion/spacy-models/releases/download/ja_core_news_
 # playwright = "^1.33.0"
 # pytest-playwright = "^0.3.3"
 pytest-xdist = "^3.3.1"
+
+[tool.poetry.group.cpu]
+optional = true
+
+[tool.poetry.group.cpu.dependencies]
+torch = {version = "^2.0.1+cpu", source = "pytorch-cpu"}
+torchvision = {version = "^0.15.2", source = "pytorch-cpu"}
+
+# [tool.poetry.group.cuda]
+# optional = true
+# 
+# [tool.poetry.group.cuda.dependencies]
+# # https://download.pytorch.org/whl/torch_stable.html
+# # https://download.pytorch.org/whl/nightly/torch_nightly.html
+# torch = {version = "2.1.0.dev20230727+cu121", allow-prereleases = true, platform = "linux", source = "pytorch-cuda"}
+# pytorch-triton = {version = "2.1.0+9e3e10c5ed", allow-prereleases = true, platform = "linux", source = "pytorch-cuda"}
+# # Only used as dependency, but note that torchvision on day X needs (may need) torch from day X-1:
+# torchvision = {version = "0.16.0.dev20230727+cu121", allow-prereleases = true, platform = "linux", source = "pytorch-cuda"}
+# 
+# [tool.poetry.group.rocm]
+# optional = true
+# 
+# [tool.poetry.group.rocm.dependencies]
+# torch = {version = "2.0.1+rocm5.4.2", allow-prereleases = true, platform = "linux", source = "pytorch-rocm"}
+# torchvision = {version = "2.0.1+rocm5.4.2", allow-prereleases = true, platform = "linux", source = "pytorch-rocm"}
 
 [[tool.poetry.source]]
 name = "pytorch-cpu"

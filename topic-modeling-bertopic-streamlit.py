@@ -2,7 +2,6 @@ import streamlit as st
 from stqdm import stqdm
 import torch
 
-import pandas as pd
 import polars as pl
 import plotly.express as px
 from pathlib import Path
