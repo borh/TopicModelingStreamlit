@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "topic-modeling-streamlit"
-version = "0.1.0"
+version = "0.1.1"
 description = ""
 authors = ["Bor Hodošček <dev@bor.space>"]
 readme = "README.md"
@@ -8,7 +8,7 @@ readme = "README.md"
 
 [tool.poetry.dependencies]
 python = "^3.11"
-streamlit = "^1.25.0"
+streamlit = "^1.35.0"
 fugashi = "^1.2.1"
 unidic-lite = "^1.0.8"
 pandas = "^2.0.1"
@@ -33,31 +33,34 @@ spacy = "^3.6.0"
 jaconv = "^0.3.4"
 pydantic = "^1.10.9"
 numba = "^0.57.1"
+hf-transfer = "^0.1.6"
+torch = "^2.3.0"
+# torch = { version = "^2.3.0", source = "pytorch-cuda" }
 
 [tool.poetry.dependencies.en_core_web_trf]
-url = "https://github.com/explosion/spacy-models/releases/download/en_core_web_trf-3.6.1/en_core_web_trf-3.6.1-py3-none-any.whl"
+url = "https://github.com/explosion/spacy-models/releases/download/en_core_web_trf-3.7.3/en_core_web_trf-3.7.3-py3-none-any.whl"
 
 [tool.poetry.dependencies.en_core_web_sm]
-url = "https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.6.0/en_core_web_sm-3.6.0-py3-none-any.whl"
+url = "https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.7.1/en_core_web_sm-3.7.1-py3-none-any.whl"
 
 [tool.poetry.dependencies.ja_core_news_sm]
-url = "https://github.com/explosion/spacy-models/releases/download/ja_core_news_sm-3.6.0/ja_core_news_sm-3.6.0-py3-none-any.whl"
+url = "https://github.com/explosion/spacy-models/releases/download/ja_core_news_sm-3.7.0/ja_core_news_sm-3.7.0-py3-none-any.whl"
 
 [tool.poetry.group.test.dependencies]
 # playwright = "^1.33.0"
 # pytest-playwright = "^0.3.3"
 pytest-xdist = "^3.3.1"
 
-[tool.poetry.group.cpu]
-optional = true
-
-[tool.poetry.group.cpu.dependencies]
-torch = {version = "^2.0.1+cpu", source = "pytorch-cpu"}
-torchvision = {version = "^0.15.2", source = "pytorch-cpu"}
+# [tool.poetry.group.cpu]
+# optional = true
+#
+# [tool.poetry.group.cpu.dependencies]
+# torch = {version = "^2.3.0+cpu", source = "pytorch-cpu"}
+# # torchvision = {version = "^0.15.2", source = "pytorch-cpu"}
 
 # [tool.poetry.group.cuda]
 # optional = true
-# 
+#
 # [tool.poetry.group.cuda.dependencies]
 # # https://download.pytorch.org/whl/torch_stable.html
 # # https://download.pytorch.org/whl/nightly/torch_nightly.html
@@ -65,10 +68,10 @@ torchvision = {version = "^0.15.2", source = "pytorch-cpu"}
 # pytorch-triton = {version = "2.1.0+9e3e10c5ed", allow-prereleases = true, platform = "linux", source = "pytorch-cuda"}
 # # Only used as dependency, but note that torchvision on day X needs (may need) torch from day X-1:
 # torchvision = {version = "0.16.0.dev20230727+cu121", allow-prereleases = true, platform = "linux", source = "pytorch-cuda"}
-# 
+#
 # [tool.poetry.group.rocm]
 # optional = true
-# 
+#
 # [tool.poetry.group.rocm.dependencies]
 # torch = {version = "2.0.1+rocm5.4.2", allow-prereleases = true, platform = "linux", source = "pytorch-rocm"}
 # torchvision = {version = "2.0.1+rocm5.4.2", allow-prereleases = true, platform = "linux", source = "pytorch-rocm"}
@@ -80,12 +83,12 @@ priority = "explicit"
 
 [[tool.poetry.source]]
 name = "pytorch-cuda"
-url = "https://download.pytorch.org/whl/nightly/cu121"
+url = "https://download.pytorch.org/whl/nightly/cu124"
 priority = "explicit"
 
 [[tool.poetry.source]]
 name = "pytorch-rocm"
-url = "https://download.pytorch.org/whl/rocm5.4.2"
+url = "https://download.pytorch.org/whl/rocm6.0"
 priority = "explicit"
 
 [build-system]
