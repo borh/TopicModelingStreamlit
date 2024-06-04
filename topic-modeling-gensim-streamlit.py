@@ -197,7 +197,9 @@ st.markdown("## PyLDAvisによる可視化")
 
 pyldavis_str = pyldavis_html(model, corpus, dictionary)
 
-st.components.v1.html(pyldavis_str, width=1250, height=875, scrolling=True)
+import streamlit.components.v1 as components
+
+components.html(pyldavis_str, width=1250, height=875, scrolling=True)
 
 st.markdown("## 文章の可視化")
 selection_col1, selection_col2 = st.columns(2)
@@ -232,7 +234,7 @@ doc_id = st.slider(
     max(work_docids),
 )
 
-st.components.v1.html(
+components.html(
     colorize_topics(
         doc_id, dictionary, model, corpus, docs, original_docs, labels_idxs
     ),
@@ -252,7 +254,7 @@ example_text = st.text_area(
 example_tokens = tokenize(example_text, tagger)
 example_bow = dictionary.doc2bow(example_tokens)
 
-st.components.v1.html(
+components.html(
     colorize_topics(
         0,
         dictionary,
@@ -282,7 +284,7 @@ if uploaded_file is not None:
     file_tokens = tokenize(string_data, tagger)
     file_bow = dictionary.doc2bow(file_tokens)
 
-    st.components.v1.html(
+    components.html(
         colorize_topics(
             0,
             dictionary,
