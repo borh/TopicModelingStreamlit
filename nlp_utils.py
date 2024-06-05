@@ -12,7 +12,12 @@ from bertopic.representation import (
     # BaseRepresentation,
     KeyBERTInspired,
     MaximalMarginalRelevance,
+    OpenAI,
 )
+import bertopic.representation as representation
+import tiktoken
+from openai import AzureOpenAI
+from os import environ as env
 from bertopic import BERTopic
 from umap import UMAP
 from sentence_transformers import SentenceTransformer
@@ -413,6 +418,14 @@ import pickle
 from pathlib import Path
 
 
+# @st.cache_resource
+# def get_openai():
+#     with open("/run/agenix/openai-api") as f:
+#         openai.api_key = f.read().strip()
+#     representation_model = OpenAI(model="gpt-4", delay_in_seconds=10, chat=True)
+#     return representation_model
+
+
 def calculate_model(
     docs: list[str],
     vectorizer: CountVectorizer,
@@ -425,15 +438,44 @@ def calculate_model(
     if representation_model:
         representation_models = {}
 
-        # if representation_model == "ChatGPT":
-        #     representation_model = get_openai()
         representation_models["Main"] = KeyBERTInspired()
         if "KeyBERTInspired" in representation_model:
             representation_models["KeyBERTInspired"] = KeyBERTInspired()
         if "MaximalMarginalRelevance" in representation_model:
-            representation_models[
-                "MaximalMarginalRelevance"
-            ] = MaximalMarginalRelevance(diversity=0.5)
+            representation_models["MaximalMarginalRelevance"] = (
+                MaximalMarginalRelevance(diversity=0.5)
+            )
+        if "GPT-4-0613" in representation_model:
+            tokenizer = tiktoken.encoding_for_model("gpt-4-0613")
+            client = AzureOpenAI(
+                # model_name="gpt-4-0613",
+                api_key=env["AZURE_API_KEY"],
+                api_version=env["AZURE_API_VERSION"],
+                azure_endpoint=env["AZURE_API_BASE"],
+                azure_deployment=env["AZURE_DEPLOYMENT_NAME"],
+                # config=OpenAIConfig(seed=42, temperature=0.0),
+            )
+            representation_model = representation.OpenAI(
+                client,
+                # model="gpt-4-0613",
+                chat=True,
+                prompt="""Q:
+I have created a topic model and have a topic that contains the following documents in Japanese:
+[DOCUMENTS]
+
+The topic is described by the following keywords: '[KEYWORDS]'.
+
+Based on the above information, can you give a short label of the topic of at most 5 words in Japanese?
+A:
+""",
+                delay_in_seconds=2,
+                nr_docs=5,
+                doc_length=80,
+                tokenizer=tokenizer,
+                generator_kwargs={"seed": 42, "temperature": 0.2},
+            )
+            representation_models["gpt-4-0613"] = representation_model
+
         # Only with spaCy:
         # elif representation_model == "PartOfSpeech":
         #     representation_model = representation.PartOfSpeech()
@@ -493,7 +535,7 @@ from time import sleep
 import xxhash
 
 
-# As long as this function does not do any unneccessary work, it should be the same as @st.cache or better
+# As long as this function does not do any unnecessary work, it should be the same as @st.cache or better
 def load_and_persist_model(
     docs: list[str],
     language: str,

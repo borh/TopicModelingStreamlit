@@ -45,20 +45,23 @@ tab1, tab2, tab3 = settings.tabs(["Model", "Tokenizer", "Corpus"])
 with tab1:
     embedding_model_option = st.selectbox(
         "Embedding model",
-        [
-            "paraphrase-multilingual-MiniLM-L12-v2",
-            "pkshatech/simcse-ja-bert-base-clcmlp",
-            "intfloat/multilingual-e5-large",
-        ]
-        if language == "Japanese"
-        # https://huggingface.co/spaces/mteb/leaderboard
-        else [
-            "all-MiniLM-L12-v2",
-            "all-mpnet-base-v2",
-            "intfloat/multilingual-e5-large",
-            "thenlper/gte-base",
-            "hkunlp/instructor-large",
-        ],
+        # Roughly ordered by JMTEB scores (calculated by me)
+        (
+            [
+                "intfloat/multilingual-e5-large",
+                "pkshatech/simcse-ja-bert-base-clcmlp",
+                "paraphrase-multilingual-MiniLM-L12-v2",
+            ]
+            if language == "Japanese"
+            # https://huggingface.co/spaces/mteb/leaderboard
+            else [
+                "all-MiniLM-L12-v2",
+                "all-mpnet-base-v2",
+                "intfloat/multilingual-e5-large",
+                "thenlper/gte-base",
+                "hkunlp/instructor-large",
+            ]
+        ),
     )
 
     representation_model_option = st.multiselect(  # Aspects -> multiselectbox
@@ -70,9 +73,13 @@ with tab1:
             # None,  # Default: most frequent tokens
             # "google/mt5-base",
             # "rinna/japanese-gpt-neox-3.6b-instruction-sft",
-            # "ChatGPT",
+            "GPT-4-0613",
         ],
-        ["KeyBERTInspired", "MaximalMarginalRelevance"],
+        [
+            # "GPT-4-0613",
+            "KeyBERTInspired",
+            # "MaximalMarginalRelevance",
+        ],
     )
     with st.expander(
         "Explanation [(official documentation)](https://maartengr.github.io/BERTopic/getting_started/multiaspect/multiaspect.html)"
@@ -136,44 +143,46 @@ with tab2:
     tokenizer_pos_filter_option = set(
         st.multiselect(
             "Remove POS",
-            [
-                "名詞",
-                "代名詞",
-                "形状詞",
-                "連体詞",
-                "副詞",
-                "接続詞",
-                "感動詞",
-                "動詞",
-                "形容詞",
-                "助動詞",
-                "助詞",
-                "接頭辞",
-                "接尾辞",
-                "記号",
-                "補助記号",
-                "空白",
-            ]
-            if language == "Japanese"
-            else [
-                "ADJ",
-                "ADP",
-                "PUNCT",
-                "ADV",
-                "AUX",
-                "SYM",
-                "INTJ",
-                "CCONJ",
-                "X",
-                "NOUN",
-                "DET",
-                "PROPN",
-                "NUM",
-                "VERB",
-                "PART",
-                "PRON",
-                "SCONJ",
-            ],
+            (
+                [
+                    "名詞",
+                    "代名詞",
+                    "形状詞",
+                    "連体詞",
+                    "副詞",
+                    "接続詞",
+                    "感動詞",
+                    "動詞",
+                    "形容詞",
+                    "助動詞",
+                    "助詞",
+                    "接頭辞",
+                    "接尾辞",
+                    "記号",
+                    "補助記号",
+                    "空白",
+                ]
+                if language == "Japanese"
+                else [
+                    "ADJ",
+                    "ADP",
+                    "PUNCT",
+                    "ADV",
+                    "AUX",
+                    "SYM",
+                    "INTJ",
+                    "CCONJ",
+                    "X",
+                    "NOUN",
+                    "DET",
+                    "PROPN",
+                    "NUM",
+                    "VERB",
+                    "PART",
+                    "PRON",
+                    "SCONJ",
+                ]
+            ),
         )
     )
 
@@ -473,16 +482,6 @@ if not metadata.is_empty():
             )
         )
 
-# import openai
-#
-#
-# @st.cache_resource
-# def get_openai():
-#     with open("/run/agenix/openai-api") as f:
-#         openai.api_key = f.read().strip()
-#     representation_model = OpenAI(model="gpt-4", delay_in_seconds=10, chat=True)
-#     return representation_model
-
 
 # FIXME Caching:
 # https://github.com/streamlit/streamlit/issues/6295
@@ -703,25 +702,33 @@ with st.expander("Topic statistics"):
 
 "# Topic information"
 
-ttab1, ttab2, ttab3 = st.tabs(
+ttab1, ttab2, ttab3, ttab4 = st.tabs(
     [
+        "DataMapPlot",
         "Hierarchical cluster analysis",
         "Similarity matrix heatmap",
         "Per-genre topic distribution",
     ]
 )
-ttab1.plotly_chart(topic_model.visualize_hierarchy())
-ttab2.plotly_chart(topic_model.visualize_heatmap())
+ttab1.plotly_chart(
+    topic_model.visualize_document_datamap(
+        docs,
+        darkmode=True,
+    )
+)
+ttab2.plotly_chart(topic_model.visualize_hierarchy())
+ttab3.plotly_chart(topic_model.visualize_heatmap())
 
 if not metadata.is_empty():
     topics_per_class = topic_model.topics_per_class(
         docs, classes=metadata.get_column("genre").to_list()
     )
-    ttab3.plotly_chart(
+    ttab4.plotly_chart(
         topic_model.visualize_topics_per_class(
             topics_per_class, top_n_topics=len(topic_model.topic_sizes_)
         )
     )
+
 
 st.markdown("# Topic query")
 
@@ -768,11 +775,13 @@ use_embedding_model_option = st.checkbox("Use embedding model", False)
 # https://mysterytribune.com/suspense-novel-excerpt-the-echo-killing-by-christi-daugherty/
 example_text = st.text_area(
     f"Token topic approximation using {'embedding' if use_embedding_model_option else 'c-tf-idf'} model",
-    value="""金の羽根
+    value=(
+        """金の羽根
 昔あるところに、月にもお日さまにも増して美しい一人娘をお持ちの王さまとお妃さまがおりました。娘はたいそうおてんばで、宮殿中の物をひっくり返しては大騒ぎをしていました。"""
-    if language == "Japanese"
-    else """It was one of those nights.
-Early on there was a flicker of hope— a couple of stabbings, a car wreck with potential. But the wounds weren’t serious and the accident was routine. After that it fell quiet.""",
+        if language == "Japanese"
+        else """It was one of those nights.
+Early on there was a flicker of hope— a couple of stabbings, a car wreck with potential. But the wounds weren’t serious and the accident was routine. After that it fell quiet."""
+    ),
 )
 
 

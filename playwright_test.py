@@ -29,7 +29,7 @@ def run(playwright: Playwright) -> None:
     check_params(page)
 
     # Intertopic distance map
-    page.locator(".slider-rail-touch-rect").click(timeout=150000)
+    page.locator(".slider-grip-rect").click(timeout=150000)
     expect(page.locator(".stException")).to_have_count(0)
 
     # 文章の可視化
