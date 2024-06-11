@@ -178,7 +178,7 @@ class SudachipyTokenizer(Tokenizer):
             for sentence in self.segmenter.segment(s)
             for t in self.model(sentence, self.mode)
             if not self.whitespace_rx.match(t.surface())
-            and not (self.pos_filter and t.part_of_speech()[0] not in self.pos_filter)
+            and not (self.pos_filter and t.part_of_speech()[0] in self.pos_filter)
         ]
 
 
