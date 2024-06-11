@@ -187,6 +187,7 @@ with tab2:
     )
 
     ngram_range_option = st.select_slider("N-gram range", range(1, 5), (1, 1))
+    max_df_option = st.number_input("Max document frequency", min_value=0.0, value=0.8)
 
 
 with tab3:
@@ -224,6 +225,7 @@ def set_options(reload):
         "tokenizer_features_option",
         "tokenizer_pos_filter_option",
         "ngram_range_option",
+        "max_df_option",
         "chunksize_option",
         "chunks_option",
         "nr_topics_option",
@@ -300,6 +302,7 @@ def create_corpus(
     labels = []
     filenames = []
     authors = []
+    # This instantiation is only used for tokenization, so we specify only minimal options
     if language == "Japanese":
         tokenizer = LanguageProcessor(
             tokenizer_type=tokenizer_type,
@@ -522,6 +525,7 @@ if not metadata.is_empty():
     st.session_state.tokenizer_type,
     st.session_state.dictionary_type,
     st.session_state.ngram_range,
+    st.session_state.max_df,
     st.session_state.tokenizer_features,
     st.session_state.tokenizer_pos_filter,
     device=st.session_state.device,
@@ -548,6 +552,7 @@ if topic_model.nr_topics != st.session_state.nr_topics:
         st.session_state.tokenizer_type,
         st.session_state.dictionary_type,
         st.session_state.ngram_range,
+        st.session_state.max_df,
         st.session_state.tokenizer_features,
         st.session_state.tokenizer_pos_filter,
         topic_model=topic_model,
@@ -583,6 +588,7 @@ elif (
         st.session_state.tokenizer_type,
         st.session_state.dictionary_type,
         st.session_state.ngram_range,
+        st.session_state.max_df,
         st.session_state.tokenizer_features,
         st.session_state.tokenizer_pos_filter,
         device=st.session_state.device,

@@ -22,16 +22,6 @@ from bertopic import BERTopic
 from umap import UMAP
 from sentence_transformers import SentenceTransformer
 
-CustomFeatures = create_feature_wrapper(
-    "CustomFeatures",
-    (
-        "pos1 pos2 pos3 pos4 cType cForm lForm lemma orth pron "
-        "pronBase goshu orthBase iType iForm fType fForm "
-        "kana kanaBase form formBase iConType fConType aType "
-        "aConType lid lemma_id"
-    ).split(" "),
-)
-
 
 class Dictionary(ABC):
     def __init__(self, name: str):
@@ -127,13 +117,7 @@ class FugashiTokenizer(Tokenizer):
         whitespace_rx: re.Pattern = re.compile(r"^\s*$"),
     ):
         super().__init__(dictionary, segmenter, features, pos_filter, whitespace_rx)
-        if "novel" in dictionary.name:
-            self.model = GenericTagger(
-                dictionary.name,
-                wrapper=CustomFeatures,
-            )
-        else:
-            self.model = Tagger(dictionary.name)
+        self.model = Tagger(dictionary.name)
 
     def get_features(self, t) -> str:
         if not self.features:
@@ -263,6 +247,7 @@ class LanguageProcessor:
         tokenizer_type: str = "MeCab",
         dictionary_type: str = "UniDic-CWJ",
         ngram_range: tuple[int, int] = (1, 1),
+        max_df: float = 0.8,
         features: list[str] | None = None,
         pos_filter: set[str] | None = None,
         vocabulary: dict[str, int] | None = None,
@@ -290,12 +275,14 @@ class LanguageProcessor:
         )
 
         self.ngram_range = ngram_range
+        self.max_df = max_df
 
         self.vocabulary = vocabulary
 
         if self.vocabulary is not None:
             self.vectorizer = CountVectorizer(
                 ngram_range=self.ngram_range,
+                max_df=self.max_df,
                 tokenizer=self.tokenizer.tokenize,
                 lowercase=False if language == "Japanese" else True,
                 token_pattern=r".+",  # i.e. no pattern; take all
@@ -304,6 +291,7 @@ class LanguageProcessor:
         else:
             self.vectorizer = CountVectorizer(
                 ngram_range=self.ngram_range,
+                max_df=self.max_df,
                 tokenizer=self.tokenizer.tokenize,
                 lowercase=False if language == "Japanese" else True,
                 token_pattern=r".+",  # i.e. no pattern; take all
@@ -342,6 +330,7 @@ class LanguageProcessor:
             self.tokenizer_type,
             self.dictionary_type,
             self.ngram_range,
+            self.max_df,
             self.features,
             self.pos_filter,
             self.vocabulary,
@@ -354,6 +343,7 @@ class LanguageProcessor:
             self.tokenizer_type,
             self.dictionary_type,
             self.ngram_range,
+            self.max_df,
             self.features,
             self.pos_filter,
             self.vocabulary,
@@ -364,6 +354,7 @@ class LanguageProcessor:
             tokenizer_type=self.tokenizer_type,
             dictionary_type=self.dictionary_type,
             ngram_range=self.ngram_range,
+            max_df=self.max_df,
             features=self.features,
             pos_filter=self.pos_filter,
             vocabulary=self.vocabulary,
@@ -549,6 +540,7 @@ def load_and_persist_model(
     tokenizer_type: str,
     dictionary_type: str,
     ngram_range: tuple[int, int],
+    max_df: float,
     tokenizer_features: list[str],
     tokenizer_pos_filter: set[str] | None,
     topic_model=None,
@@ -569,6 +561,7 @@ def load_and_persist_model(
                 tokenizer_type,
                 dictionary_type,
                 ngram_range,
+                max_df,
                 tokenizer_features,
                 tokenizer_pos_filter,
             ),
@@ -620,6 +613,7 @@ def load_and_persist_model(
                         tokenizer_type=tokenizer_type,
                         dictionary_type=dictionary_type,
                         ngram_range=ngram_range,
+                        max_df=max_df,
                         features=tokenizer_features,
                         pos_filter=tokenizer_pos_filter,
                         language=language,
@@ -660,6 +654,7 @@ def load_and_persist_model(
                     tokenizer_type=tokenizer_type,
                     dictionary_type=dictionary_type,
                     ngram_range=ngram_range,
+                    max_df=max_df,
                     features=tokenizer_features,
                     pos_filter=tokenizer_pos_filter,
                     language=language,
@@ -689,6 +684,7 @@ def load_and_persist_model(
                 tokenizer_type,
                 dictionary_type,
                 ngram_range,
+                max_df,
                 tokenizer_features,
                 tokenizer_pos_filter,
                 topic_model=topic_model,
