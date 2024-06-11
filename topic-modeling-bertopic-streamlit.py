@@ -464,7 +464,7 @@ def chunksizes_by_author_plot(metadata):
         y="length",
         # points="all", # Too heavy for large amounts
         hover_data=["label", "docid"],  # color="author",
-        title="Author document distribution",
+        title="Author document length distribution",
     )
     return fig
 
@@ -473,11 +473,25 @@ if not metadata.is_empty():
     with st.expander("Open to see basic document stats"):
         st.write(chunksizes_by_author_plot(metadata))
         st.write(
+            px.histogram(
+                metadata.to_pandas(),
+                x="author",
+                title="Author document distribution",
+            )
+        )
+        st.write(
             px.box(
                 metadata.to_pandas(),
                 x="genre",
                 y="length",
                 hover_data=["label", "docid"],
+                title="Genre document length distribution",
+            )
+        )
+        st.write(
+            px.histogram(
+                metadata.to_pandas(),
+                x="genre",
                 title="Genre document distribution",
             )
         )
@@ -710,12 +724,20 @@ ttab1, ttab2, ttab3, ttab4 = st.tabs(
         "Per-genre topic distribution",
     ]
 )
-ttab1.plotly_chart(
-    topic_model.visualize_document_datamap(
+
+
+@st.cache_data
+def visualize_datamap(unique_id):
+    return topic_model.visualize_document_datamap(
         docs,
         darkmode=True,
+        # cluster_boundary_polygons=True,
+        # cluster_boundary_line_width=6,
+        # enable_search=True,
     )
-)
+
+
+ttab1.plotly_chart(visualize_datamap(st.session_state.unique_id))
 ttab2.plotly_chart(topic_model.visualize_hierarchy())
 ttab3.plotly_chart(topic_model.visualize_heatmap())
 

@@ -127,7 +127,7 @@ class FugashiTokenizer(Tokenizer):
         whitespace_rx: re.Pattern = re.compile(r"^\s*$"),
     ):
         super().__init__(dictionary, segmenter, features, pos_filter, whitespace_rx)
-        if "65_novel" in dictionary.name:
+        if "novel" in dictionary.name:
             self.model = GenericTagger(
                 dictionary.name,
                 wrapper=CustomFeatures,
@@ -241,8 +241,11 @@ TOKENIZER_MAP = {
 DEVENV_DICDIR = ".devenv/profile/share/mecab/dic"
 
 DICTIONARY_MAP = {
-    "近現代口語小説UniDic": FugashiDictionary("-r ./65_novel/dicrc -d ./65_novel/"),
+    "近現代口語小説UniDic": FugashiDictionary(
+        f"-d {DEVENV_DICDIR}/unidic-novel -r {DEVENV_DICDIR}/unidic-novel/dicrc"
+    ),
     "UniDic-CWJ": FugashiDictionary(f"-d {DEVENV_DICDIR}/unidic-cwj"),
+    "UniDic-CSJ": FugashiDictionary(f"-d {DEVENV_DICDIR}/unidic-csj"),
     "SudachiDict-full/A": SudachipyDictionary("SudachiDict-full/A"),
     "SudachiDict-full/B": SudachipyDictionary("SudachiDict-full/B"),
     "SudachiDict-full/C": SudachipyDictionary("SudachiDict-full/C"),

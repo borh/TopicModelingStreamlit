@@ -26,12 +26,61 @@
         runHook postInstall
       '';
     };
+  unidic-csj = let
+    pname = "unidic-csj";
+    version = "202302";
+  in
+    pkgs.stdenv.mkDerivation {
+      inherit pname version;
+
+      src = pkgs.fetchzip {
+        url = "https://ccd.ninjal.ac.jp/unidic_archive/2302/${pname}-${version}.zip";
+        name = "${pname}-${version}.zip";
+        sha256 = "sha256-EVvrj6iM4UQtSu0jIVZ2jh8OI4HXcScMD+31tTQqcTk=";
+        stripRoot = false;
+      };
+
+      phases = ["unpackPhase" "installPhase"];
+      installPhase = ''
+        runHook preInstall
+        install -d $out/share/mecab/dic/$pname
+        install -m 644 dicrc *.def *.bin *.dic $out/share/mecab/dic/$pname
+        runHook postInstall
+      '';
+    };
+
+  unidic-novel = let
+    pname = "unidic-novel";
+    version = "202308";
+  in
+    pkgs.stdenv.mkDerivation {
+      inherit pname version;
+
+      src = pkgs.fetchzip {
+        url = "https://ccd.ninjal.ac.jp/unidic_archive/2308/${pname}-v${version}.zip";
+        name = "${pname}-v${version}.zip";
+        sha256 = "sha256-oKgx/u4HMiwIupWyL95zq2rL4oKQC965kY1lycLm2XE=";
+        stripRoot = false;
+      };
+
+      phases = ["unpackPhase" "installPhase"];
+      installPhase = ''
+        cd $pname
+        runHook preInstall
+        install -d $out/share/mecab/dic/$pname
+        install -m 644 dicrc *.def *.bin *.dic $out/share/mecab/dic/$pname
+        runHook postInstall
+      '';
+    };
+
   runtimePackages =
     [
       pkgs.mecab
       pkgs.jumanpp
       pkgs.sentencepiece
       unidic-cwj
+      unidic-csj
+      unidic-novel
     ]
     ++ lib.optionals pkgs.stdenv.isDarwin [
       pkgs.llvmPackages_14.stdenv
@@ -49,8 +98,8 @@
     ++ lib.optionals (!config.container.isBuilding) [
       pkgs.git
     ];
-  cuda = false;
-  rocm = true;
+  cuda = true;
+  rocm = false;
 in
   lib.attrsets.recursiveUpdate
   {
@@ -87,12 +136,6 @@ in
         ));
 
     enterShell = ''
-      if [ ! -d 65_novel ]; then
-        wget -c https://clrd.ninjal.ac.jp/unidic_archive/2203/UniDic-202203_65_novel.zip
-        ${pkgs.unzip}/bin/unzip -xn UniDic-202203_65_novel.zip
-        mv 65_novel/.dicrc 65_novel/dicrc
-      fi
-
       if [ ! -d Aozora-Bunko-Fiction-Selection-2022-05-30 ]; then
         wget -c https://nlp.lang.osaka-u.ac.jp/files/Aozora-Bunko-Fiction-Selection-2022-05-30.zip
         ${pkgs.unzip}/bin/unzip -xn Aozora-Bunko-Fiction-Selection-2022-05-30.zip
