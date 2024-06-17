@@ -13,7 +13,7 @@ from gensim.models import LdaModel
 # top_topics = model.top_topics(corpus)
 
 from pathlib import Path
-from fugashi import GenericTagger
+from fugashi import Tagger
 
 
 # # @st.cache_resource
@@ -53,9 +53,14 @@ def get_metadata():
     return metadata_df
 
 
+DEVENV_DICDIR = ".devenv/profile/share/mecab/dic"
+
+
 @st.cache_resource
-def get_tagger(flags="-r ./65_novel/dicrc -d ./65_novel/"):
-    tagger = GenericTagger(flags)
+def get_tagger(
+    flags=f"-d {DEVENV_DICDIR}/unidic-novel -r {DEVENV_DICDIR}/unidic-novel/dicrc",
+):
+    tagger = Tagger(flags)
     return tagger
 
 
