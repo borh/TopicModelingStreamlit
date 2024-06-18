@@ -65,10 +65,7 @@ def get_tagger(
 
 
 def get_lemma(token):
-    if len(token.feature) > 6:
-        return token.feature[7]
-    else:  # 未知語
-        return token.surface
+    return token.feature.lemma or token.surface  # 未知語
 
 
 def tokenize(text, tagger, lemma=False, remove_proper_nouns=False):
