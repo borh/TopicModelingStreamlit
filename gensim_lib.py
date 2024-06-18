@@ -247,38 +247,36 @@ def complementary(hex):
     )
 
 
-def invert_color(hex):
-    rgb = mcolors.to_rgb(hex)
-    inverted_rgb = (1 - rgb[0], 1 - rgb[1], 1 - rgb[2])
-    return mcolors.to_hex(inverted_rgb)
+# def invert_color(hex):
+#     rgb = mcolors.to_rgb(hex)
+#     inverted_rgb = (1 - rgb[0], 1 - rgb[1], 1 - rgb[2])
+#     return mcolors.to_hex(inverted_rgb)
 
 
 def generate_topic_colormap(n):
-    cm1 = plt.get_cmap("tab20b")
-    cm2 = plt.get_cmap("tab20c")
+    colormaps = ["tab20b", "tab20c", "tab10", "Set3", "Paired"]
+    colors = []
 
-    if n <= 10:
-        return [[mcolors.rgb2hex(cm1(1.0 * i / n)), None] for i in range(n)]
-    else:
-        # n2 = n // 2
-        return (
-            [[mcolors.rgb2hex(cm1(1.0 * i / 20)), None] for i in range(20)]
-            + [[mcolors.rgb2hex(cm2(1.0 * i / 20)), None] for i in range(20)]
-            + [
-                [
-                    mcolors.rgb2hex(cm1(1.0 * i / 20)),
-                    complementary(mcolors.rgb2hex(cm1(1.0 * i / 20))),
-                ]
-                for i in range(20)
+    while len(colors) < n:
+        for cmap_name in colormaps:
+            cmap = plt.get_cmap(cmap_name)
+            num_colors = cmap.N
+            colors += [
+                mcolors.rgb2hex(cmap(1.0 * i / num_colors)) for i in range(num_colors)
             ]
-            + [
-                [
-                    mcolors.rgb2hex(cm2(1.0 * i / 20)),
-                    complementary(mcolors.rgb2hex(cm2(1.0 * i / 20))),
-                ]
-                for i in range(20)
-            ]
-        )
+            if len(colors) >= n:
+                break
+
+    colors = colors[:n]
+
+    # Add complementary colors if more than base colors are needed
+    full_colors = [[color, None] for color in colors]
+    if n > len(full_colors):
+        full_colors += [
+            [color, complementary(color)] for color in colors[: n - len(full_colors)]
+        ]
+
+    return full_colors[:n]
 
 
 def colorize(s, fg, topicid=None, border=None):
@@ -289,10 +287,8 @@ def colorize(s, fg, topicid=None, border=None):
     return f"<span style='color:{fg};background-color:white;{border}'>{token}</span>"
 
 
-topic2color = generate_topic_colormap(40)  # FIXME
-
-
 def show_topic_colors(model, num_topics):
+    topic2color = generate_topic_colormap(num_topics)
     for topic, terms in model.show_topics(num_topics):
         c = topic2color[topic]
         display(
@@ -308,6 +304,7 @@ def colorize_topics(
     トピックは多い場合は，1文章のみに限定し，その文のトピックのみに色を配分することによって
     見やすくなるかもしれない。
     """
+    topic2color = generate_topic_colormap(model.num_topics)
     sample = corpus[docid]
     inferred_topics = sorted(model[sample], key=itemgetter(1), reverse=True)
     inferred_topic_ids = {topic_id for topic_id, _ in inferred_topics}
