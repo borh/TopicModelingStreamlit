@@ -214,8 +214,8 @@ def topic2dense(topic_probs, num_topics):
     return [d[i] if i in d else 0.0 for i in range(num_topics)]
 
 
-@st.cache_data
-def create_dtm(_model, corpus, authors, collapsed=True):
+@st.cache_data  # num_topics is used for caching purposes
+def create_dtm(_model, num_topics, corpus, authors, collapsed=True):
     dt = [topic2dense(_model.get_document_topics(d), _model.num_topics) for d in corpus]
     dtm = pd.DataFrame(dt, columns=range(_model.num_topics), index=authors)
     if collapsed:

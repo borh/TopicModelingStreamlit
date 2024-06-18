@@ -185,7 +185,7 @@ st.write(
 
 st.markdown("## 文章トピック行列 (Document-Topic Matrix)")
 
-dtm = create_dtm(model, corpus, metadata.get_column("author").to_list())
+dtm = create_dtm(model, num_topics, corpus, metadata.get_column("author").to_list())
 
 st.markdown("トピック分布による作家の距離とクラスタ")
 
