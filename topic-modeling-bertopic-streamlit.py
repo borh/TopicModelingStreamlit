@@ -31,116 +31,100 @@ st.markdown(
 st.sidebar.header("BERTopic Settings")
 
 
-language = st.sidebar.radio(
-    "Language",
-    ("Japanese", "English"),
-    0,
-    horizontal=True,
-)
-
-settings = st.sidebar.form("settings")
-
-tab1, tab2, tab3 = settings.tabs(["Model", "Tokenizer", "Corpus"])
-
-with tab1:
-    embedding_model_option = st.selectbox(
-        "Embedding model",
+def get_embedding_model_options(language: str) -> list[str]:
+    """Get embedding model options based on selected language."""
+    if language == "Japanese":
         # Roughly ordered by JMTEB scores (calculated by me)
-        (
-            [
-                "intfloat/multilingual-e5-large",
-                "pkshatech/simcse-ja-bert-base-clcmlp",
-                "paraphrase-multilingual-MiniLM-L12-v2",
-            ]
-            if language == "Japanese"
-            # https://huggingface.co/spaces/mteb/leaderboard
-            else [
-                "all-MiniLM-L12-v2",
-                "all-mpnet-base-v2",
-                "intfloat/multilingual-e5-large",
-                "thenlper/gte-base",
-                "hkunlp/instructor-large",
-            ]
-        ),
-    )
+        return [
+            "pkshatech/simcse-ja-bert-base-clcmlp",
+            "paraphrase-multilingual-MiniLM-L12-v2",
+            "intfloat/multilingual-e5-large",  # High JMTEB, but strange results (soft topic calculation not working)?
+        ]
+    # https://huggingface.co/spaces/mteb/leaderboard
+    return [
+        "all-MiniLM-L12-v2",
+        "all-mpnet-base-v2",
+        "intfloat/multilingual-e5-large",
+        "thenlper/gte-base",
+        "hkunlp/instructor-large",
+    ]
 
-    representation_model_option = st.multiselect(  # Aspects -> multiselectbox
-        "Topic representation",
-        [
-            "KeyBERTInspired",
-            "MaximalMarginalRelevance",
-            "PartOfSpeech",  # Needs spaCy
-            # None,  # Default: most frequent tokens
-            # "google/mt5-base",
-            # "rinna/japanese-gpt-neox-3.6b-instruction-sft",
-            "GPT-4-0613",
-        ],
-        [
-            # "GPT-4-0613",
-            "KeyBERTInspired",
-            # "MaximalMarginalRelevance",
-        ],
-    )
-    with st.expander(
-        "Explanation [(official documentation)](https://maartengr.github.io/BERTopic/getting_started/multiaspect/multiaspect.html)"
-    ):
-        st.markdown(
-            """
-        Representation models control how topics are labeled.
-        In traditional LDA models, this might be a label such as `12_money_bank_business`, denoting the topic number and the three most frequent tokens in the topic.
-        BERTopic offers multi-aspect representation where multiple representation can be computed at the same time.
-        """
+
+def create_settings_form(language: str) -> st.form:
+    """Create the settings form in the sidebar."""
+    settings = st.sidebar.form("settings")
+
+    tab1, tab2, tab3 = settings.tabs(["Model", "Tokenizer", "Corpus"])
+
+    with tab1:
+        st.selectbox(
+            "Embedding model",
+            get_embedding_model_options(language),
+            key="embedding_model_option",
         )
 
-with tab2:
-    # prompt_option = None
-    # if representation_model_option and "/" in representation_model_option:
-    #     prompt_option = settings.text_area(
-    #         "Prompt",
-    #         value="""トピックは次のキーワードで特徴付けられている: [KEYWORDS]. これらのキーワードを元に完結にトピックを次の通り要約する: """,
-    #         label_visibility="collapsed",
-    #     )
-    #     # [KEYWORDS]というキーワードを次の単語で表現する：
-
-    tdu = {
-        "Japanese": {
-            "MeCab": ["近現代口語小説UniDic", "UniDic-CWJ"],
-            "Sudachi": [
-                "SudachiDict-full/A",
-                "SudachiDict-full/B",
-                "SudachiDict-full/C",
+        st.multiselect(
+            "Topic representation",
+            [
+                "KeyBERTInspired",
+                "MaximalMarginalRelevance",
+                "PartOfSpeech",  # Needs spaCy
+                "microsoft/Phi-3-small-8k-instruct",
+                "GPT-4-0613",
             ],
-            "spaCy": ["ja_core_news_sm"],
-            "Juman++": ["Jumandict"],
-        },
-        "English": {
-            "spaCy": [
-                "en_core_web_sm",
-                "en_core_web_trf",
-            ]
-        },
-    }
+            ["KeyBERTInspired"],
+            key="representation_model_option",
+        )
+        with st.expander(
+            "Explanation [(official documentation)](https://maartengr.github.io/BERTopic/getting_started/multiaspect/multiaspect.html)"
+        ):
+            st.markdown(
+                """
+            Representation models control how topics are labeled.
+            In traditional LDA models, this might be a label such as `12_money_bank_business`, denoting the topic number and the three most frequent tokens in the topic.
+            BERTopic offers multi-aspect representation where multiple representation can be computed at the same time.
+            """
+            )
 
-    tokenizer_dictionary_option = st.selectbox(
-        "Tokenizer and dictionary",
-        [
-            f"{tokenizer}/{dictionary}"
-            for tokenizer, dictionaries in tdu[language].items()
-            for dictionary in dictionaries
-        ],
-    )
+    with tab2:
+        tokenizer_dictionary_options = {
+            "Japanese": {
+                "MeCab": ["近現代口語小説UniDic", "UniDic-CWJ"],
+                "Sudachi": [
+                    "SudachiDict-full/A",
+                    "SudachiDict-full/B",
+                    "SudachiDict-full/C",
+                ],
+                "spaCy": ["ja_core_news_sm"],
+                "Juman++": ["Jumandict"],
+            },
+            "English": {
+                "spaCy": [
+                    "en_core_web_sm",
+                    "en_core_web_trf",
+                ]
+            },
+        }
 
-    tokenizer_features_option = st.multiselect(
-        "Default token representation (multiple selections will be formatted as surface/POS/... etc.)",
-        [
-            "orth",
-            "lemma",
-            "pos1",
-        ],
-        ["orth"],
-    )
+        st.selectbox(
+            "Tokenizer and dictionary",
+            [
+                f"{tokenizer}/{dictionary}"
+                for tokenizer, dictionaries in tokenizer_dictionary_options[
+                    language
+                ].items()
+                for dictionary in dictionaries
+            ],
+            key="tokenizer_dictionary_option",
+        )
 
-    tokenizer_pos_filter_option = set(
+        st.multiselect(
+            "Default token representation (multiple selections will be formatted as surface/POS/... etc.)",
+            ["orth", "lemma", "pos1"],
+            ["orth"],
+            key="tokenizer_features_option",
+        )
+
         st.multiselect(
             "Remove POS",
             (
@@ -183,60 +167,64 @@ with tab2:
                     "SCONJ",
                 ]
             ),
+            key="tokenizer_pos_filter_option",
         )
+
+        st.select_slider("N-gram range", range(1, 5), (1, 1), key="ngram_range_option")
+        st.number_input(
+            "Max document frequency", min_value=0.0, value=0.8, key="max_df_option"
+        )
+
+    with tab3:
+        st.number_input(
+            "Maximum chunksize", min_value=10, value=100, key="chunksize_option"
+        )
+        st.number_input(
+            "Number of chunks per doc (0 for all)",
+            min_value=0,
+            value=50,
+            key="chunks_option",
+        )
+        st.number_input(
+            "Reduce to n topics (0 == auto (do not reduce))",
+            min_value=0,
+            value=0,
+            key="nr_topics_option",
+        )
+
+    settings.radio(
+        "Computation mode",
+        [f"cuda:{i}" for i in range(torch.cuda.device_count())] + ["cpu"],
+        key="device_option",
     )
 
-    ngram_range_option = st.select_slider("N-gram range", range(1, 5), (1, 1))
-    max_df_option = st.number_input("Max document frequency", min_value=0.0, value=0.8)
+    # FIXME migrate to phi
+    if "representation_model_option" in st.session_state and any(
+        "/" in opt for opt in st.session_state["representation_model_option"]
+    ):
+        settings.text_area(
+            "Prompt",
+            value="トピックは次のキーワードで特徴付けられている: [KEYWORDS]. これらのキーワードを元に完結にトピックを次の通り要約する: ",
+            key="prompt_option",
+            label_visibility="collapsed",
+        )
+
+    return settings
 
 
-with tab3:
-    chunksize_option = st.number_input(
-        "Maximum chunksize",
-        min_value=10,
-        value=100,
+def set_options(reload: bool) -> None:
+    """Set options in the session state."""
+    for option in st.session_state.keys():
+        if option.endswith("_option"):
+            barename = option.replace("_option", "")
+            st.session_state[barename] = st.session_state[option]
+    st.session_state["tokenizer_type"] = (
+        st.session_state.tokenizer_dictionary_option.split("/")[0]
     )
-    chunks_option = st.number_input(
-        "Number of chunks per doc (0 for all)",
-        min_value=0,
-        value=50,
-    )
-
-    nr_topics_option = st.number_input(
-        "Reduce to n topics (0 == auto (do not reduce))",
-        min_value=0,
-        value=0,
-    )
-    if nr_topics_option == 0:
-        nr_topics_option = "auto"
-
-
-device_option = settings.radio(
-    "Computation mode",
-    [f"cuda:{i}" for i in range(torch.cuda.device_count())] + ["cpu"],
-)
-
-
-def set_options(reload):
-    for option in [
-        "embedding_model_option",
-        "representation_model_option",
-        # "prompt_option",
-        "tokenizer_features_option",
-        "tokenizer_pos_filter_option",
-        "ngram_range_option",
-        "max_df_option",
-        "chunksize_option",
-        "chunks_option",
-        "nr_topics_option",
-        "device_option",
-    ]:
-        barename = option.replace("_option", "")
-        st.session_state[barename] = globals()[option]
-    st.session_state["tokenizer_type"] = tokenizer_dictionary_option.split("/")[0]
     st.session_state["dictionary_type"] = "/".join(
-        tokenizer_dictionary_option.split("/")[1:]
+        st.session_state.tokenizer_dictionary_option.split("/")[1:]
     )
+    st.session_state["prompt"] = st.session_state.get("prompt_option", "")
     if reload:
         st.session_state["reload"] = True
 
@@ -250,9 +238,10 @@ def set_options(reload):
     st.toast("Compute!", icon="🎉")
 
 
+language = st.sidebar.radio("Language", ("Japanese", "English"), 0, horizontal=True)
+settings = create_settings_form(language)
 submit_all = settings.form_submit_button("Compute!", on_click=set_options, args=(True,))
 
-# # We need to set options once, to initialize
 if "unique_id" not in st.session_state:
     set_options(False)
 
@@ -268,7 +257,8 @@ Running on {socket.gethostname()}
 
 
 @st.cache_data
-def get_metadata(language="Japanese") -> pl.DataFrame:
+def get_metadata(language: str = "Japanese") -> pl.DataFrame | None:
+    """Load metadata based on the selected language."""
     if language != "Japanese":
         return None
 
@@ -278,7 +268,7 @@ def get_metadata(language="Japanese") -> pl.DataFrame:
     return metadata_df
 
 
-def split(lst: list, n: int) -> Iterator[list]:
+def split(lst: list[str], n: int) -> Iterator[list[str]]:
     """Yield successive n-sized chunks from lst."""
     for i in range(0, len(lst), n):
         yield lst[i : i + n]
@@ -287,61 +277,51 @@ def split(lst: list, n: int) -> Iterator[list]:
 all_metadata = get_metadata(language)
 
 
-# Note that we do not take token filtering or features into account in corpus creation
-# as this is also used for embedding model.
 @st.cache_data
 def create_corpus(
-    _all_metadata,
+    _all_metadata: pl.DataFrame | None,
     language: str,
     chunksize: int,
     chunks: int,
     tokenizer_type: str,
     dictionary_type: str,
 ) -> tuple[list[str], pl.DataFrame]:
+    """Create the corpus by chunking the documents."""
     docs = []
     labels = []
     filenames = []
     authors = []
-    # This instantiation is only used for tokenization, so we specify only minimal options
+
     if language == "Japanese":
         tokenizer = LanguageProcessor(
             tokenizer_type=tokenizer_type,
             dictionary_type=dictionary_type,
             language=language,
         ).tokenizer
-        sep = ""
     else:
-        # We use spaCy's Token.text_with_ws to be able to use same logic as with
-        # Japanese version when joining back tokens.
         tokenizer = LanguageProcessor(
             tokenizer_type=tokenizer_type,
             dictionary_type=dictionary_type,
             language=language,
             features=["text_with_ws"],
         ).tokenizer
-        sep = " "
 
-    # logging.error(tokenizer)
-    # assert tokenizer.tokenize("こと") == ["こと"]
+    sep = "" if language == "Japanese" else " "
 
     files = list(
         Path("./Aozora-Bunko-Fiction-Selection-2022-05-30/Plain/").glob("*.txt")
         if language == "Japanese"
         else Path("./standard-ebooks-selection/").glob("*.txt")
     )
+
     for file in stqdm(files, desc="Chunking corpus"):
-        logging.debug(file)
         title = file.stem
         with open(file, encoding="utf-8") as f:
-            # "doc": list of units of analysis (~paragraph-size text) to pass to embedding model
-            doc: list[str] = []
-            # Temporary container for tokens to put in chunk
-            tokens_chunk: list[str] = []
-            running_count = 0
+            doc, tokens_chunk, running_count = [], [], 0
             for paragraph in f.read().splitlines():
                 if chunks > 0 and running_count >= chunks:
                     break
-                if paragraph == "":
+                if not paragraph:
                     continue
                 if language == "Japanese" and is_katakana_sentence(paragraph):
                     logging.warning(
@@ -349,55 +329,45 @@ def create_corpus(
                     )
                     paragraph = jaconv.kata2hira(paragraph)
 
-                if language == "Japanese":
-                    tokens = tokenizer.tokenize(paragraph)
-                    assert len(paragraph) > 0 and len(tokens) > 0
-                else:
-                    tokens = paragraph.split()
+                tokens = (
+                    tokenizer.tokenize(paragraph)
+                    if language == "Japanese"
+                    else paragraph.split()
+                )
 
                 if len(tokens) >= chunksize:
-                    # Add current tokens_chunk
                     doc.append(sep.join(tokens_chunk))
                     running_count += 1
-                    # Split tokens into chunksize-size chunks
                     xs = list(split(tokens, chunksize))
                     last_chunk = xs.pop()
                     doc.extend(sep.join(x) for x in xs)
                     running_count += len(xs)
-                    if len(last_chunk) < chunksize:
-                        tokens_chunk = last_chunk
-                    else:
-                        tokens_chunk = []
-                # If adding paragraph to chunk goes over chunksize, commit current chunk to paragraphs and init new chunk with paragraph
+                    tokens_chunk = last_chunk if len(last_chunk) < chunksize else []
                 elif len(tokens) + len(tokens_chunk) > chunksize:
                     doc.append(sep.join(tokens_chunk))
                     running_count += 1
                     tokens_chunk = tokens
-                # Otherwise, add to chunk
                 else:
                     tokens_chunk.extend(tokens)
-            # Add leftover (partial) chunk to paragraphs
+
             if tokens_chunk:
                 doc.append(sep.join(tokens_chunk))
 
-            # A chunks value of 0 returns all data chunks
             if chunks > 0:
                 doc = doc[:chunks]
 
             docs.extend(doc)
             labels.extend([title for _ in range(len(doc))])
             filenames.extend([file.name for _ in range(len(doc))])
-
-            if _all_metadata is None:
-                author = title.split("_")[0]
-            else:
-                author = (
-                    _all_metadata.filter(pl.col("filename") == Path(file).name)
-                    .select(pl.col("author_ja"))
-                    .head(1)
-                    .to_series()
-                    .to_list()[0]
-                )
+            author = (
+                title.split("_")[0]
+                if _all_metadata is None
+                else _all_metadata.filter(pl.col("filename") == Path(file).name)
+                .select(pl.col("author_ja"))
+                .head(1)
+                .to_series()
+                .to_list()[0]
+            )
             authors.extend([author for _ in range(len(doc))])
 
     metadata = pl.DataFrame(
@@ -409,10 +379,8 @@ def create_corpus(
             "docid": range(len(docs)),
         }
     )
-    assert authors != []
 
     if all_metadata is None:
-        # FIXME placeholders
         metadata = metadata.with_columns(title=pl.col("label"), genre=pl.lit("all"))
     elif not all_metadata.is_empty():
         metadata = all_metadata.select(
@@ -442,7 +410,6 @@ authors = set(
     .get_column("author")
 )
 
-
 with st.expander("Debug information"):
     st.write(st.session_state)
     st.markdown(
@@ -461,15 +428,13 @@ with st.expander("Debug information"):
 
 
 def chunksizes_by_author_plot(metadata):
-    fig = px.box(
+    return px.box(
         metadata.to_pandas(),
         x="author",
         y="length",
-        # points="all", # Too heavy for large amounts
-        hover_data=["label", "docid"],  # color="author",
+        hover_data=["label", "docid"],
         title="Author document length distribution",
     )
-    return fig
 
 
 if not metadata.is_empty():
@@ -499,55 +464,13 @@ if not metadata.is_empty():
             )
         )
 
-
-# FIXME Caching:
-# https://github.com/streamlit/streamlit/issues/6295
-# So our strategy must be:
-# -   wherever possible, use st.cache_data
-# -   for models and unhashable inputs, use surrogate indicators of change to trigger reloads (?!)
-#     for this, we would need a custom model load/check function that intelligently caches, loads and saves on changes.
-
-
-(
-    topic_model_path,
-    topic_model,
-    embeddings,
-    reduced_embeddings,
-    topics,
-    probs,
-) = load_and_persist_model(
-    docs,
-    language,
-    st.session_state.embedding_model,
-    st.session_state.representation_model,
-    None,  # st.session_state.prompt,
-    st.session_state.nr_topics,
-    st.session_state.tokenizer_type,
-    st.session_state.dictionary_type,
-    st.session_state.ngram_range,
-    st.session_state.max_df,
-    st.session_state.tokenizer_features,
-    st.session_state.tokenizer_pos_filter,
-    device=st.session_state.device,
-)
-
-
-if topic_model.nr_topics != st.session_state.nr_topics:
-    logging.warning(f"Reducing topics to {st.session_state.nr_topics}...")
-    topic_model.reduce_topics(docs, st.session_state.nr_topics)
-    (
-        topic_model_path,
-        topic_model,
-        embeddings,
-        reduced_embeddings,
-        topics,
-        probs,
-    ) = load_and_persist_model(
+(topic_model_path, topic_model, embeddings, reduced_embeddings, topics, probs) = (
+    load_and_persist_model(
         docs,
         language,
         st.session_state.embedding_model,
         st.session_state.representation_model,
-        None,  # st.session_state.prompt,
+        st.session_state.prompt,
         st.session_state.nr_topics,
         st.session_state.tokenizer_type,
         st.session_state.dictionary_type,
@@ -555,43 +478,58 @@ if topic_model.nr_topics != st.session_state.nr_topics:
         st.session_state.max_df,
         st.session_state.tokenizer_features,
         st.session_state.tokenizer_pos_filter,
-        topic_model=topic_model,
-        embeddings=embeddings,
-        reduced_embeddings=reduced_embeddings,
-        # TODO Check these:
-        topics=topic_model.topics_,
-        probs=topic_model.probs_,
         device=st.session_state.device,
+    )
+)
+
+if topic_model.nr_topics != st.session_state.nr_topics:
+    logging.warning(f"Reducing topics to {st.session_state.nr_topics}...")
+    topic_model.reduce_topics(docs, st.session_state.nr_topics)
+    (topic_model_path, topic_model, embeddings, reduced_embeddings, topics, probs) = (
+        load_and_persist_model(
+            docs,
+            language,
+            st.session_state.embedding_model,
+            st.session_state.representation_model,
+            st.session_state.prompt,
+            st.session_state.nr_topics,
+            st.session_state.tokenizer_type,
+            st.session_state.dictionary_type,
+            st.session_state.ngram_range,
+            st.session_state.max_df,
+            st.session_state.tokenizer_features,
+            st.session_state.tokenizer_pos_filter,
+            topic_model=topic_model,
+            embeddings=embeddings,
+            reduced_embeddings=reduced_embeddings,
+            topics=topic_model.topics_,
+            probs=topic_model.probs_,
+            device=st.session_state.device,
+        )
     )
 elif (
     topic_model.nr_topics != st.session_state.nr_topics
     and topic_model.nr_topics is not None
 ):
-    # When setting topic reduction back off, we want to return to the previous state
     logging.warning(f"Loading model on nr_topics change: {st.session_state.nr_topics}")
     if st.session_state.nr_topics is None:
         st.session_state.nr_topics = "auto"
-    (
-        topic_model_path,
-        topic_model,
-        embeddings,
-        reduced_embeddings,
-        topics,
-        probs,
-    ) = load_and_persist_model(
-        docs,
-        language,
-        st.session_state.embedding_model,
-        st.session_state.representation_model,
-        None,  # st.session_state.prompt,
-        st.session_state.nr_topics,
-        st.session_state.tokenizer_type,
-        st.session_state.dictionary_type,
-        st.session_state.ngram_range,
-        st.session_state.max_df,
-        st.session_state.tokenizer_features,
-        st.session_state.tokenizer_pos_filter,
-        device=st.session_state.device,
+    (topic_model_path, topic_model, embeddings, reduced_embeddings, topics, probs) = (
+        load_and_persist_model(
+            docs,
+            language,
+            st.session_state.embedding_model,
+            st.session_state.representation_model,
+            st.session_state.prompt,
+            st.session_state.nr_topics,
+            st.session_state.tokenizer_type,
+            st.session_state.dictionary_type,
+            st.session_state.ngram_range,
+            st.session_state.max_df,
+            st.session_state.tokenizer_features,
+            st.session_state.tokenizer_pos_filter,
+            device=st.session_state.device,
+        )
     )
 
 mc1, mc2, mc3, mc4, mc5 = st.columns(5)
@@ -646,12 +584,7 @@ work_docids = (
 # Avoid serializing and sending all docids to client; instead use slide min and max values.
 # This works because docids are sequential per author per work.
 if work_docids:
-    doc_id = st.slider(
-        "作品チャンク",
-        min(work_docids),
-        max(work_docids),
-    )
-
+    doc_id = st.slider("作品チャンク", min(work_docids), max(work_docids))
     st.markdown(f"> {docs[doc_id]}")
     st.write(topic_model.visualize_distribution(probs[doc_id], min_probability=0.0))
     with st.expander(
@@ -693,41 +626,22 @@ def get_topic_info(unique_id):
             "Count",
             "Name",
             "Representation",
-            # FIXME Multi-aspect representations return a list of word, freqs that do not serialize with PyArrow; drop for now
         ]
     ]
 
 
 with st.expander("Topic statistics"):
     st.write(get_topic_info(st.session_state.unique_id))
-    # st.write(
-    #     pl.DataFrame(
-    #         (
-    #             (aspect, topic_id, ", ".join(token for token, freq in token_freqs))
-    #             for aspect, aspect_topics in topic_model.topic_aspects_.items()
-    #             for topic_id, token_freqs in aspect_topics.items()
-    #         ),
-    #         schema=["Representation model", "Topic", "Tokens"],
-    #     ).to_pandas()
-    # )
-
-# topic_name_to_id = {
-#     r["Name"]: r["Topic"] for _, r in topic_model.get_topic_info().iterrows()
-# }
-
-# r_topic = st.selectbox("Choose topic", options=topic_name_to_id.keys())
-
-# st.write(topic_model.get_representative_docs(topic=int(r_topic.split("_")[0])))
 
 
 "# Topic information"
 
 ttab1, ttab2, ttab3, ttab4 = st.tabs(
     [
-        "DataMapPlot",
         "Hierarchical cluster analysis",
         "Similarity matrix heatmap",
         "Per-genre topic distribution",
+        "DataMapPlot",
     ]
 )
 
@@ -737,26 +651,23 @@ def visualize_datamap(unique_id):
     return topic_model.visualize_document_datamap(
         docs,
         darkmode=True,
-        # cluster_boundary_polygons=True,
-        # cluster_boundary_line_width=6,
-        # enable_search=True,
     )
 
 
-ttab1.plotly_chart(visualize_datamap(st.session_state.unique_id))
-ttab2.plotly_chart(topic_model.visualize_hierarchy())
-ttab3.plotly_chart(topic_model.visualize_heatmap())
+ttab1.plotly_chart(topic_model.visualize_hierarchy())
+ttab2.plotly_chart(topic_model.visualize_heatmap())
 
 if not metadata.is_empty():
     topics_per_class = topic_model.topics_per_class(
         docs, classes=metadata.get_column("genre").to_list()
     )
-    ttab4.plotly_chart(
+    ttab3.plotly_chart(
         topic_model.visualize_topics_per_class(
             topics_per_class, top_n_topics=len(topic_model.topic_sizes_)
         )
     )
 
+ttab4.plotly_chart(visualize_datamap(st.session_state.unique_id))
 
 st.markdown("# Topic query")
 
@@ -781,8 +692,7 @@ if topic_query != "":
 
 
 def visualize_text(unique_id, doc, use_embedding_model):
-    """Wrapper for token-level topic visualization. Currently, using the cf-tfifdf model is broken,
-    so we use the embedding model instead."""
+    """Wrapper for token-level topic visualization. Currently, using the cf-tfifdf model is broken, so we use the embedding model."""
     _topic_distr, topic_token_distr = topic_model.approximate_distribution(
         doc,
         use_embedding_model=use_embedding_model,
@@ -791,9 +701,7 @@ def visualize_text(unique_id, doc, use_embedding_model):
         separator="",  # No whitespace for Japanese
     )
 
-    # Visualize the token-level distributions
     df = topic_model.visualize_approximate_distribution(doc, topic_token_distr[0])
-    # assert not isinstance(df, pd.DataFrame) or not df.empty
     return df
 
 

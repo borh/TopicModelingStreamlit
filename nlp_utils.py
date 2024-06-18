@@ -8,13 +8,20 @@ from fugashi import Tagger, GenericTagger, create_feature_wrapper
 import sudachipy
 from sklearn.feature_extraction.text import CountVectorizer
 from bertopic.representation import (
-    # TextGeneration,
     # BaseRepresentation,
     KeyBERTInspired,
     MaximalMarginalRelevance,
+    TextGeneration,
     OpenAI,
 )
 import bertopic.representation as representation
+from transformers import (
+    pipeline,
+    AutoModelForCausalLM,
+    AutoTokenizer,
+    BitsAndBytesConfig,
+)
+import torch
 import tiktoken
 from openai import AzureOpenAI
 from os import environ as env
@@ -438,6 +445,31 @@ def calculate_model(
         if "MaximalMarginalRelevance" in representation_model:
             representation_models["MaximalMarginalRelevance"] = (
                 MaximalMarginalRelevance(diversity=0.5)
+            )
+        if "microsoft/Phi-3-small-8k-instruct" in representation_model:
+            MODEL = "microsoft/Phi-3-small-8k-instruct"
+            # Quantization is only supported on CUDA devices and not on ROCm devices (yet)
+            bab_support = (
+                True if device == "cuda" and torch.version.hip is None else False
+            )
+            quantization_config = BitsAndBytesConfig(load_in_8bit=True)
+            model = AutoModelForCausalLM.from_pretrained(
+                MODEL,
+                device_map="cuda",
+                torch_dtype="auto",
+                trust_remote_code=True,
+                quantization_config=quantization_config if bab_support else None,
+            )
+            tokenizer = AutoTokenizer.from_pretrained(MODEL)
+            generator = pipeline(
+                model=model,
+                tokenizer=tokenizer,
+                task="text-generation",
+                max_new_tokens=50,
+                repetition_penalty=1.1,
+            )
+            representation_models["microsoft/Phi-3-small-8k-instruct"] = TextGeneration(
+                generator, prompt=prompt
             )
         if "GPT-4-0613" in representation_model:
             tokenizer = tiktoken.encoding_for_model("gpt-4-0613")
