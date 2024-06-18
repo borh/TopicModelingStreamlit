@@ -99,7 +99,7 @@ class SpacyTokenizer(Tokenizer):
             "text_with_ws": lambda t: t.text_with_ws,
         }
         if not self.features:
-            return t.surface
+            return t.text
         else:
             return "/".join(mapping[feature](t) for feature in self.features)
 
