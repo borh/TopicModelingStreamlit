@@ -460,7 +460,7 @@ def calculate_model(
                 trust_remote_code=True,
                 quantization_config=quantization_config if bab_support else None,
             )
-            tokenizer = AutoTokenizer.from_pretrained(MODEL)
+            tokenizer = AutoTokenizer.from_pretrained(MODEL, trust_remote_code=True)
             generator = pipeline(
                 model=model,
                 tokenizer=tokenizer,

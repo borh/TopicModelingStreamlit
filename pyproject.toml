@@ -37,6 +37,7 @@ hf-transfer = "^0.1.6"
 torch = "^2.3.0"
 # torch = { version = "^2.3.0+rocm6.0", source = "pytorch-rocm" }
 # pytorch_triton_rocm = { version = "^2.3.0", source = "pytorch-rocm" }
+einops = "^0.7.0"
 scipy = "=1.12" # newer breaks gensim
 playwright = "^1.44.0"
 tiktoken = "^0.7.0"

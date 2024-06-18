@@ -164,6 +164,12 @@ in
       export AZURE_DEPLOYMENT_NAME=$(cat /run/agenix/azure-deployment-name)
       export AZURE_API_VERSION="2024-02-15-preview"
       export HF_TOKEN=$(cat /run/agenix/hf-token)
+
+      ${
+        if cuda
+        then "uv pip install wheel bitsandbytes accelerate\nuv pip install flash-attn"
+        else ""
+      }
     '';
 
     languages.python = {

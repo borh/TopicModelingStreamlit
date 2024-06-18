@@ -73,6 +73,7 @@ def create_settings_form(language: str) -> st.form:
                 "GPT-4-0613",
             ],
             ["KeyBERTInspired"],
+            # ["microsoft/Phi-3-small-8k-instruct"],
             key="representation_model_option",
         )
         with st.expander(
