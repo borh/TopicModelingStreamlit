@@ -167,7 +167,7 @@ in
 
       ${
         if cuda
-        then "uv pip install wheel bitsandbytes accelerate\nuv pip install flash-attn"
+        then "uv pip install wheel bitsandbytes accelerate\nuv pip install flash-attn --no-build-isolation"
         else ""
       }
     '';
