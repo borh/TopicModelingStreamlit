@@ -1,30 +1,37 @@
-import tqdm
-import stqdm
-
-tqdm.orignal_class = stqdm.stqdm
-
-
-import streamlit as st
-
-st.set_page_config(layout="wide")
-
-from data_lib import *
-from gensim_lib import *
-import polars as pl
-import plotly.express as px
 import socket
 from io import StringIO
 
+import pandas as pd
+import plotly.express as px
+import polars as pl
+import stqdm
+import streamlit as st
+import streamlit.components.v1 as components
+import tqdm
+from gensim.corpora import Dictionary
+from gensim.models import LdaModel
 
+from topic_modeling_streamlit.data_lib import (
+    create_chunked_data,
+    get_metadata,
+)
+from topic_modeling_streamlit.gensim_lib import (
+    colorize_topics,
+    create_dtm,
+    create_dtm_heatmap,
+    get_tagger,
+    pyldavis_html,
+    tokenize,
+)
+
+tqdm.orignal_class = stqdm.stqdm  # type: ignore[attr-defined]
+st.set_page_config(layout="wide")
 st.title("Gensim (LDA) を使用したトピックモデル")
 
 st.sidebar.markdown("## Gensim: 設定")
 
 # Custom HTML:
 # st.components.v1.html(html.data, scrolling=True)
-
-from gensim.corpora import Dictionary
-from gensim.models import LdaModel
 
 # Set training parameters.
 c01, c02 = st.sidebar.columns(2)
@@ -102,7 +109,6 @@ def create_gensim_corpus(_dic, docs):
 dictionary = create_dictionary(docs)
 corpus = create_gensim_corpus(dictionary, docs)
 
-from gensim.models.callbacks import Callback
 
 # lda_callback = Callback(metrics=[])
 
@@ -197,7 +203,6 @@ st.markdown("## PyLDAvisによる可視化")
 
 pyldavis_str = pyldavis_html(model, corpus, dictionary)
 
-import streamlit.components.v1 as components
 
 components.html(pyldavis_str, width=1250, height=875, scrolling=True)
 

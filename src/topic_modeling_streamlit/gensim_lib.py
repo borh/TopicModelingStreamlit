@@ -1,19 +1,23 @@
 import logging
+import os
+from colorsys import hsv_to_rgb, rgb_to_hsv
+from operator import itemgetter
+from pathlib import Path
+
+import matplotlib.colors as mcolors
+import matplotlib.pyplot as plt
+import pandas as pd
+import plotly.express as px
+import polars as pl
+import pyLDAvis
+import pyLDAvis.gensim_models as gensim_models
+import streamlit as st
+from fugashi import Tagger
+from IPython.display import HTML, display
 
 logging.basicConfig(
     format="%(asctime)s : %(levelname)s : %(message)s", level=logging.INFO
 )
-
-
-import streamlit as st
-import pandas as pd
-import polars as pl
-from gensim.models import LdaModel
-
-# top_topics = model.top_topics(corpus)
-
-from pathlib import Path
-from fugashi import Tagger
 
 
 # # @st.cache_resource
@@ -53,15 +57,13 @@ def get_metadata():
     return metadata_df
 
 
-DEVENV_DICDIR = ".devenv/profile/share/mecab/dic"
+MECAB_DICDIR_NOVEL = os.environ.get("MECAB_DICDIR_NOVEL")
 
 
 @st.cache_resource
-def get_tagger(
-    flags=f"-d {DEVENV_DICDIR}/unidic-novel -r {DEVENV_DICDIR}/unidic-novel/dicrc",
-):
-    tagger = Tagger(flags)
-    return tagger
+def get_tagger():
+    flags = f"-d {MECAB_DICDIR_NOVEL} -r {MECAB_DICDIR_NOVEL}/dicrc"
+    return Tagger(flags)
 
 
 def get_lemma(token):
@@ -98,9 +100,9 @@ def chunk_tokens(
         text = text.replace("\n\n", "\n")
         sentences = text.splitlines()
 
-        labels = []
-        authors = []
-        chunks = [[]]
+        labels: list[str] = []
+        authors: list[str] = []
+        chunks: list[list[str]] = [[]]
 
         author = (
             metadata.filter(pl.col("filename") == Path(file).name)
@@ -183,10 +185,6 @@ def create_chunked_data(_all_metadata, chunksize=2000, tagger=get_tagger()):
 #
 # from pprint import pprint
 # pprint(top_topics[:2])
-
-import pyLDAvis
-import pyLDAvis.gensim_models as gensim_models
-
 # pyLDAvis.disable_notebook()
 
 
@@ -228,16 +226,6 @@ def create_dtm_heatmap(dtm):
     return px.imshow(dtm, text_auto=".2f", aspect="auto")
 
 
-import plotly.express as px
-from IPython.display import display, HTML
-
-import matplotlib.pyplot as plt
-import matplotlib.colors as mcolors
-from operator import itemgetter
-
-from colorsys import rgb_to_hsv, hsv_to_rgb
-
-
 def complementary(hex):
     """returns RGB components of complementary color"""
     r, g, b = mcolors.to_rgb(hex)
@@ -255,7 +243,7 @@ def complementary(hex):
 
 def generate_topic_colormap(n):
     colormaps = ["tab20b", "tab20c", "tab10", "Set3", "Paired"]
-    colors = []
+    colors: list[str] = []
 
     while len(colors) < n:
         for cmap_name in colormaps:
@@ -319,11 +307,14 @@ def colorize_topics(
                 key=itemgetter(1),
                 reverse=True,
             )
-            top_token_topic = [topic_id for topic_id, _prob in top_token_topics]
+            # collect the list of candidate topics for this token
+            top_token_topics_list: list[int] = [
+                topic_id for topic_id, _prob in top_token_topics
+            ]
             if assigned_only:
                 filtered_topics = [
                     topic_id
-                    for topic_id in top_token_topic
+                    for topic_id in top_token_topics_list
                     if topic_id in inferred_topic_ids
                 ]
                 if filtered_topics:
@@ -333,7 +324,8 @@ def colorize_topics(
                     top_token_topic = None
                     color = ["black", "white"]
             else:
-                top_token_topic = top_token_topic[0]
+                # unfiltered: just pick the topmost topic
+                top_token_topic = top_token_topics_list[0]
                 color = topic2color[top_token_topic]
         else:
             top_token_topic = None  # No assigned topics as OOV
