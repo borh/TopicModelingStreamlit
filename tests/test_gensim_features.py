@@ -1,3 +1,4 @@
+from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
@@ -87,7 +88,7 @@ def test_chunk_controls_keep_tail_surfaces_and_metadata_aligned(
             for word in text.split()
         ]
 
-    monkeypatch.setattr(gensim_lib, "get_tagger", lambda: tagger)
+    monkeypatch.setattr(gensim_lib, "get_tagger", lambda dictionary="NOVEL": tagger)
     monkeypatch.chdir(tmp_path)
     directory = tmp_path / "Aozora-Bunko-Fiction-Selection-2022-05-30" / "Plain"
     directory.mkdir(parents=True)
@@ -117,3 +118,107 @@ def test_chunk_controls_keep_tail_surfaces_and_metadata_aligned(
         metadata, chunksize=3, min_chunksize=3
     )
     assert len(filtered_docs) == filtered.height == 2
+
+
+@pytest.mark.parametrize(
+    "data",
+    [
+        b"topic_id,label\n0,A\n0,B\n",
+        b"topic_id,label\n3,A\n",
+        b"topic_id,label\n0.5,A\n",
+        b"topic_id,label\nbad,A\n",
+        b"id,label\n0,A\n",
+    ],
+)
+def test_invalid_label_imports_are_rejected(data):
+    from topic_modeling_streamlit.gensim_lib import parse_topic_labels
+
+    with pytest.raises(ValueError):
+        parse_topic_labels(data, 3)
+
+
+def test_labels_round_trip_blank_and_literal_na():
+    import pandas as pd
+
+    from topic_modeling_streamlit.gensim_lib import parse_topic_labels
+
+    table = pd.DataFrame({"topic_id": [0, 1, 2], "label": ["猫,犬", "", "NA"]})
+    assert parse_topic_labels(table.to_csv(index=False).encode(), 3) == {
+        0: "猫,犬",
+        1: "",
+        2: "NA",
+    }
+
+
+def test_selected_filters_preserve_surface_alignment():
+    from topic_modeling_streamlit.gensim_lib import tokenize
+
+    tokens = [
+        SimpleNamespace(
+            surface="猫たち",
+            feature=SimpleNamespace(lemma="猫", pos1="名詞", pos2="一般"),
+        ),
+        SimpleNamespace(
+            surface="東京",
+            feature=SimpleNamespace(lemma="東京", pos1="名詞", pos2="固有名詞"),
+        ),
+        SimpleNamespace(
+            surface="は", feature=SimpleNamespace(lemma="は", pos1="助詞", pos2="一般")
+        ),
+    ]
+    assert tokenize("", lambda _: tokens, True, True, ("助詞",)) == ["猫", "", ""]
+    assert tokenize("", lambda _: tokens, False, False) == ["猫たち", "東京", "は"]
+
+
+def test_disk_cache_survives_process_restart_and_concurrent_requests(
+    tmp_path, monkeypatch
+):
+    import os
+    import subprocess
+    import sys
+    from concurrent.futures import ThreadPoolExecutor
+    from unittest.mock import patch
+
+    from topic_modeling_streamlit.gensim_lib import load_or_train_lda
+
+    monkeypatch.chdir(tmp_path)
+    settings = {
+        "min_df": 1,
+        "max_df": 1.0,
+        "num_topics": 2,
+        "passes": 1,
+        "iterations": 10,
+        "random_state": 42,
+    }
+    docs = [["cat", "pet"], ["dog", "pet"]]
+    with (
+        patch("gensim.models.LdaModel", wraps=LdaModel) as train,
+        ThreadPoolExecutor(max_workers=5) as pool,
+    ):
+        results = list(
+            pool.map(lambda _: load_or_train_lda("shared", docs, **settings), range(5))
+        )
+    assert train.call_count == 1
+    for model, dictionary, corpus in results:
+        np.testing.assert_array_equal(model.get_topics(), results[0][0].get_topics())
+        assert len(dictionary) == 3
+        assert corpus == results[0][2]
+    assert len(list((tmp_path / "cache/lda").glob("*.pickle"))) == 1
+    code = """
+from unittest.mock import patch
+from topic_modeling_streamlit.gensim_lib import load_or_train_lda
+with patch('gensim.models.LdaModel', side_effect=AssertionError('must reload')):
+    model, dictionary, corpus = load_or_train_lda('shared', [], min_df=1, max_df=1)
+    assert model.num_topics == 2 and len(dictionary) == 3 and len(corpus) == 2
+"""
+    subprocess.run(
+        [sys.executable, "-c", code],
+        check=True,
+        env={
+            **os.environ,
+            "PYTHONPATH": str(Path(__file__).resolve().parents[1] / "src"),
+        },
+    )
+    (tmp_path / "cache/lda/shared.pickle").write_bytes(b"")
+    recovered = load_or_train_lda("shared", docs, **settings)
+    assert recovered[0].num_topics == 2

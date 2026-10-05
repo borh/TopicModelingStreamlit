@@ -344,6 +344,7 @@ def chunk_tokens(
     remove_proper_nouns: bool = False,
     chunk_size: int = 2000,
     min_chunksize: int = 1,
+    pos_filter: tuple[str, ...] = (),
 ) -> tuple[list[str], list[str], list[list[str]]]:
     """
     Split a text into ~chunk_size-token chunks using sentence boundaries.
@@ -372,7 +373,11 @@ def chunk_tokens(
     current_chunk = 0
     for sentence in sentences:
         tokens = tokenize(
-            sentence, tagger, lemma=lemma, remove_proper_nouns=remove_proper_nouns
+            sentence,
+            tagger,
+            lemma=lemma,
+            remove_proper_nouns=remove_proper_nouns,
+            pos_filter=pos_filter,
         )
         chunks[current_chunk].extend(tokens)
         if len(chunks[current_chunk]) >= chunk_size:
@@ -393,13 +398,17 @@ def create_chunked_data(
     chunksize: int = 2000,
     min_chunksize: int = 1,
     chunks: int = 0,
+    dictionary: str = "NOVEL",
+    lemma: bool = True,
+    remove_proper_nouns: bool = True,
+    pos_filter: tuple[str, ...] = (),
 ) -> tuple[pl.DataFrame, list[list[str]], list[list[str]]]:
     """
     Chunk Aozora Japanese texts into token lists for the gensim app.
 
     Returns:
         metadata: DataFrame with author, label, filename, length, docid, title, genre, year
-        docs: token lists (lemmatized, proper nouns removed)
+        docs: token lists using the selected token form and filters
         original_docs: token lists (surface forms)
     """
     if all_metadata is None:
@@ -411,7 +420,7 @@ def create_chunked_data(
 
     from topic_modeling_streamlit.gensim_lib import get_tagger
 
-    tagger = get_tagger()
+    tagger = get_tagger(dictionary)
 
     labels: list[str] = []
     filenames: list[str] = []
@@ -419,15 +428,16 @@ def create_chunked_data(
     docs: list[list[str]] = []
     original_docs: list[list[str]] = []
 
-    for file in Path("./Aozora-Bunko-Fiction-Selection-2022-05-30/Plain/").glob(
-        "*.txt"
+    for file in sorted(
+        Path("./Aozora-Bunko-Fiction-Selection-2022-05-30/Plain/").glob("*.txt")
     ):
         chunk_labels, chunk_authors, token_chunks = chunk_tokens(
             file,
             tagger,
             all_metadata,
-            lemma=True,
-            remove_proper_nouns=True,
+            lemma=lemma,
+            remove_proper_nouns=remove_proper_nouns,
+            pos_filter=pos_filter,
             chunk_size=chunksize,
             min_chunksize=min_chunksize,
         )

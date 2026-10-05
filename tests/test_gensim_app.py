@@ -41,7 +41,7 @@ def lda_app(tmp_path, monkeypatch):
             for word in text.split()
         ]
 
-    monkeypatch.setattr(gensim_lib, "get_tagger", lambda: tagger)
+    monkeypatch.setattr(gensim_lib, "get_tagger", lambda dictionary="NOVEL": tagger)
     return AppTest.from_file(str(APP), default_timeout=30).run()
 
 
@@ -92,7 +92,9 @@ def test_training_is_explicit_and_labels_survive_navigation(lda_app):
     button(app, "Save label").click().run()
     assert app.session_state["lda_labels"] == {0: "Pets"}
     assert app.dataframe[0].value.query("topic_id == 0").label.eq("Pets").all()
-    app.selectbox[0].select(1).run()
+    next(widget for widget in app.selectbox if widget.label == "Select topic").select(
+        1
+    ).run()
     assert app.session_state["lda_labels"] == {0: "Pets"}
     assert len(app.get("download_button")) == 5
     assert all(download.proto.ignore_rerun for download in app.get("download_button"))
@@ -125,3 +127,28 @@ def test_failed_training_preserves_previous_model_and_sessions_are_isolated(lda_
     assert any("No vocabulary remains" in error.value for error in first.error)
     assert first.session_state["lda_result"][0] == old_key
     assert first.session_state["lda_labels"][0] == "Private label"
+
+
+def test_presets_reset_labels_and_active_preprocessing(lda_app):
+    app = lda_app
+    next(
+        widget for widget in app.selectbox if widget.label == "Settings preset"
+    ).select("Quick exploration").run()
+    button(app, "Apply preset").click().run()
+    assert number(app, "Passes").value == 2
+    assert "lda_result" not in app.session_state
+    app = train(app)
+    app.text_input[0].set_value("Pets")
+    button(app, "Save label").click().run()
+    button(app, "Compute!").click().run()
+    assert app.session_state["lda_labels"] == {0: "Pets"}
+    button(app, "Reset labels").click().run()
+    assert app.session_state["lda_labels"] == {}
+    assert app.text_input[0].value == ""
+    next(widget for widget in app.selectbox if widget.label == "Token form").select(
+        "surface"
+    ).run()
+    assert app.session_state["lda_preprocessing"]["lemma"] is True
+    button(app, "Compute!").click().run()
+    assert app.session_state["lda_preprocessing"]["lemma"] is False
+    assert not app.exception

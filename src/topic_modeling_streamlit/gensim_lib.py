@@ -1,5 +1,7 @@
 import logging
 import os
+import pickle
+import tempfile
 from colorsys import hsv_to_rgb, rgb_to_hsv
 from html import escape
 from operator import itemgetter
@@ -16,7 +18,7 @@ from fugashi import Tagger
 from IPython.display import HTML, display
 from pyLDAvis import gensim_models
 
-from topic_modeling_streamlit.cache_locks import device_compute_lock
+from topic_modeling_streamlit.cache_locks import device_compute_lock, model_cache_lock
 
 logging.basicConfig(
     format="%(asctime)s : %(levelname)s : %(message)s", level=logging.INFO
@@ -64,8 +66,11 @@ MECAB_DICDIR_NOVEL = os.environ.get("MECAB_DICDIR_NOVEL")
 
 
 @st.cache_resource
-def get_tagger():
-    flags = f"-d {MECAB_DICDIR_NOVEL} -r {MECAB_DICDIR_NOVEL}/dicrc"
+def get_tagger(dictionary="NOVEL"):
+    directory = os.environ.get(f"MECAB_DICDIR_{dictionary}")
+    if not directory:
+        raise ValueError(f"MECAB_DICDIR_{dictionary} is not configured.")
+    flags = f"-d {directory} -r {directory}/dicrc"
     return Tagger(flags)
 
 
@@ -73,10 +78,12 @@ def get_lemma(token):
     return token.feature.lemma or token.surface  # 未知語
 
 
-def tokenize(text, tagger, lemma=False, remove_proper_nouns=False):
+def tokenize(text, tagger, lemma=False, remove_proper_nouns=False, pos_filter=()):
     tokens = []
     for token in tagger(text):
-        if remove_proper_nouns and token.feature.pos2 == "固有名詞":
+        if (remove_proper_nouns and token.feature.pos2 == "固有名詞") or (
+            getattr(token.feature, "pos1", "") in pos_filter
+        ):
             tokens.append("")
             continue
         if token == "<EOS>":
@@ -86,9 +93,11 @@ def tokenize(text, tagger, lemma=False, remove_proper_nouns=False):
     return tokens
 
 
-def infer_text(text, tagger, dictionary):
+def infer_text(
+    text, tagger, dictionary, lemma=True, remove_proper_nouns=True, pos_filter=()
+):
     with device_compute_lock("cpu"):
-        processed = tokenize(text, tagger, lemma=True, remove_proper_nouns=True)
+        processed = tokenize(text, tagger, lemma, remove_proper_nouns, pos_filter)
         surfaces = tokenize(text, tagger)
     return processed, surfaces, dictionary.doc2bow(processed)
 
@@ -362,3 +371,67 @@ def colorize_topics(
             original_docs[docid][position], color[0], top_token_topic, color[1]
         )
     return o + "</div>"
+
+
+def load_or_train_lda(cache_key, docs, **settings):
+    from gensim.corpora import Dictionary
+    from gensim.models import LdaModel
+
+    directory = Path("cache/lda")
+    directory.mkdir(parents=True, exist_ok=True)
+    path = directory / f"{cache_key}.pickle"
+    with model_cache_lock(path.with_suffix(".lock")):
+        if path.exists():
+            try:
+                with path.open("rb") as file:
+                    return pickle.load(file)
+            except (EOFError, pickle.UnpicklingError):
+                path.unlink()
+        dictionary = Dictionary([[token for token in doc if token] for doc in docs])
+        dictionary.filter_extremes(
+            no_below=settings.pop("min_df"), no_above=settings.pop("max_df")
+        )
+        if not dictionary:
+            raise ValueError(
+                "No vocabulary remains. Lower min document frequency or raise max document frequency."
+            )
+        corpus = [dictionary.doc2bow(doc) for doc in docs]
+        with device_compute_lock("cpu"):
+            model = LdaModel(
+                corpus=corpus,
+                id2word=dictionary,
+                alpha="auto",
+                eta="auto",
+                eval_every=None,
+                **settings,
+            )
+        result = model, dictionary, corpus
+        temporary = None
+        try:
+            with tempfile.NamedTemporaryFile(dir=directory, delete=False) as file:
+                temporary = Path(file.name)
+                pickle.dump(result, file, protocol=pickle.HIGHEST_PROTOCOL)
+            os.replace(temporary, path)
+        finally:
+            if temporary is not None:
+                temporary.unlink(missing_ok=True)
+        return result
+
+
+def parse_topic_labels(data, num_topics):
+    from io import BytesIO
+
+    table = pd.read_csv(BytesIO(data), keep_default_na=False)
+    if list(table.columns) != ["topic_id", "label"]:
+        raise ValueError("Expected CSV columns: topic_id,label.")
+    ids = pd.to_numeric(table.topic_id, errors="coerce")
+    if (
+        ids.isna().any()
+        or (ids % 1 != 0).any()
+        or ids.duplicated().any()
+        or not ids.between(0, num_topics - 1).all()
+    ):
+        raise ValueError(
+            "Topic IDs must be unique integers within this model's topic range."
+        )
+    return {int(topic): str(label).strip() for topic, label in zip(ids, table.label)}
