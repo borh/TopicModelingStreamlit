@@ -1,30 +1,39 @@
-import tqdm
-import stqdm
-
-tqdm.orignal_class = stqdm.stqdm
-
-
-import streamlit as st
-
-st.set_page_config(layout="wide")
-
-from data_lib import *
-from gensim_lib import *
-import polars as pl
-import plotly.express as px
 import socket
 from io import StringIO
+from pathlib import Path
 
+import pandas as pd
+import plotly.express as px
+import polars as pl
+import stqdm
+import streamlit as st
+import streamlit.components.v1 as components
+import tqdm
+import xxhash
+from gensim.corpora import Dictionary
+from gensim.models import LdaModel
 
+from topic_modeling_streamlit.data_lib import (
+    create_chunked_data,
+    get_metadata,
+)
+from topic_modeling_streamlit.gensim_lib import (
+    colorize_topics,
+    create_dtm,
+    create_dtm_heatmap,
+    get_tagger,
+    pyldavis_html,
+    tokenize,
+)
+
+tqdm.orignal_class = stqdm.stqdm  # type: ignore[attr-defined]
+st.set_page_config(layout="wide")
 st.title("Gensim (LDA) を使用したトピックモデル")
 
 st.sidebar.markdown("## Gensim: 設定")
 
 # Custom HTML:
 # st.components.v1.html(html.data, scrolling=True)
-
-from gensim.corpora import Dictionary
-from gensim.models import LdaModel
 
 # Set training parameters.
 c01, c02 = st.sidebar.columns(2)
@@ -54,8 +63,41 @@ st.sidebar.markdown(
 st.sidebar.text(f"Running on {socket.gethostname()}")
 
 
-all_metadata = get_metadata()
-metadata, docs, original_docs = create_chunked_data(all_metadata)
+def source_revision() -> tuple[tuple[str, int, int], ...]:
+    corpus_dir = Path("Aozora-Bunko-Fiction-Selection-2022-05-30")
+    source_files = [
+        corpus_dir / "groups.csv",
+        *sorted((corpus_dir / "Plain").glob("*.txt")),
+    ]
+    return tuple(
+        (str(path), path.stat().st_size, path.stat().st_mtime_ns)
+        for path in source_files
+        if path.exists()
+    )
+
+
+@st.cache_data(show_spinner=True)
+def create_cached_chunked_data(revision: tuple[tuple[str, int, int], ...]):
+    _ = revision
+    return create_chunked_data(get_metadata())
+
+
+corpus_revision = source_revision()
+corpus_cache_key = xxhash.xxh3_64_hexdigest(repr(corpus_revision).encode())
+analysis_cache_key = xxhash.xxh3_64_hexdigest(
+    repr(
+        (
+            corpus_cache_key,
+            random_state,
+            num_topics,
+            chunksize,
+            passes,
+            iterations,
+            eval_every,
+        )
+    ).encode()
+)
+metadata, docs, original_docs = create_cached_chunked_data(corpus_revision)
 
 labels_idxs = metadata.get_column("label").to_list()
 authors = set(
@@ -87,28 +129,30 @@ with st.expander("Open to see basic document stats"):
 
 
 @st.cache_resource
-def create_dictionary(_docs):
+def create_dictionary(cache_key: str, _docs):
+    _ = cache_key
     dictionary = Dictionary(_docs)
     dictionary.filter_extremes(no_below=5, no_above=0.5)
     return dictionary
 
 
 @st.cache_resource
-def create_gensim_corpus(_dic, docs):
+def create_gensim_corpus(cache_key: str, _dic, docs):
+    _ = cache_key
     corpus = [_dic.doc2bow(doc) for doc in docs]
     return corpus
 
 
-dictionary = create_dictionary(docs)
-corpus = create_gensim_corpus(dictionary, docs)
+dictionary = create_dictionary(corpus_cache_key, docs)
+corpus = create_gensim_corpus(corpus_cache_key, dictionary, docs)
 
-from gensim.models.callbacks import Callback
 
 # lda_callback = Callback(metrics=[])
 
 
 @st.cache_data
 def create_lda_model(
+    cache_key,
     _dic,
     corpus,
     random_state,
@@ -118,6 +162,7 @@ def create_lda_model(
     iterations,
     eval_every,  # Don't evaluate model perplexity, takes too much time.
 ):
+    _ = cache_key
     _temp = _dic[0]  # This is only to "load" the dictionary.
     id2word = _dic.id2token
 
@@ -138,6 +183,7 @@ def create_lda_model(
 
 
 model = create_lda_model(
+    corpus_cache_key,
     dictionary,
     corpus,
     random_state=random_state,
@@ -185,7 +231,13 @@ st.write(
 
 st.markdown("## 文章トピック行列 (Document-Topic Matrix)")
 
-dtm = create_dtm(model, num_topics, corpus, metadata.get_column("author").to_list())
+dtm = create_dtm(
+    analysis_cache_key,
+    model,
+    num_topics,
+    corpus,
+    metadata.get_column("author").to_list(),
+)
 
 st.markdown("トピック分布による作家の距離とクラスタ")
 
@@ -195,9 +247,8 @@ st.plotly_chart(create_dtm_heatmap(dtm))
 
 st.markdown("## PyLDAvisによる可視化")
 
-pyldavis_str = pyldavis_html(model, corpus, dictionary)
+pyldavis_str = pyldavis_html(analysis_cache_key, model, corpus, dictionary)
 
-import streamlit.components.v1 as components
 
 components.html(pyldavis_str, width=1250, height=875, scrolling=True)
 

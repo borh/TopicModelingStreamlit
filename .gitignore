@@ -6,3 +6,11 @@ __pycache__
 .venv
 .devenv*
 .direnv
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+cache/*
+.coverage*
+standard-ebooks-selection/
+standard-ebooks-selection.zip
+standard_ebooks_metadata.csv

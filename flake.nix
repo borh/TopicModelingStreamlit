@@ -1,5 +1,5 @@
 {
-  description = "Example Python development environment for Zero to Nix";
+  description = "Topic modeling with Streamlit, uv, and native NLP tools";
 
   # Flake inputs
   inputs = {
@@ -29,133 +29,83 @@
         );
     in
     {
+      checks.x86_64-linux.service = import ./nix/check-service.nix {
+        inherit nixpkgs;
+        pkgs = import nixpkgs { system = "x86_64-linux"; };
+        module = self.nixosModules.default;
+      };
+      nixosModules.default = import ./nix/service.nix { source = self; };
+      formatter = forAllSystems ({ pkgs }: pkgs.nixfmt);
+
+      packages = forAllSystems (
+        { pkgs }: {
+          default = import ./nix/launcher.nix { inherit pkgs; };
+        }
+      );
+      apps = forAllSystems (
+        { pkgs }: {
+          default = {
+            type = "app";
+            program = pkgs.lib.getExe self.packages.${pkgs.stdenv.hostPlatform.system}.default;
+          };
+        }
+      );
+
       # Development environment output
       devShells = forAllSystems (
         { pkgs }:
         {
           default =
             let
-              unidic-cwj =
-                let
-                  pname = "unidic-cwj";
-                  version = "202302";
-                in
-                pkgs.stdenv.mkDerivation {
-                  inherit pname version;
-
-                  src = pkgs.fetchzip {
-                    url = "https://ccd.ninjal.ac.jp/unidic_archive/2302/${pname}-${version}.zip";
-                    name = "${pname}-${version}.zip";
-                    sha256 = "sha256-VJEbOf6WWg5e0MqoLIzXWeBqf0zw7idMMqoeTHOzsEw=";
-                    stripRoot = false;
-                  };
-
-                  phases = [
-                    "unpackPhase"
-                    "installPhase"
-                  ];
-                  installPhase = ''
-                    runHook preInstall
-                    install -d $out/share/mecab/dic/$pname
-                    install -m 644 dicrc *.def *.bin *.dic $out/share/mecab/dic/$pname
-                    runHook postInstall
-                  '';
-                };
-              unidic-csj =
-                let
-                  pname = "unidic-csj";
-                  version = "202302";
-                in
-                pkgs.stdenv.mkDerivation {
-                  inherit pname version;
-
-                  src = pkgs.fetchzip {
-                    url = "https://ccd.ninjal.ac.jp/unidic_archive/2302/${pname}-${version}.zip";
-                    name = "${pname}-${version}.zip";
-                    sha256 = "sha256-EVvrj6iM4UQtSu0jIVZ2jh8OI4HXcScMD+31tTQqcTk=";
-                    stripRoot = false;
-                  };
-
-                  phases = [
-                    "unpackPhase"
-                    "installPhase"
-                  ];
-                  installPhase = ''
-                    runHook preInstall
-                    install -d $out/share/mecab/dic/$pname
-                    install -m 644 dicrc *.def *.bin *.dic $out/share/mecab/dic/$pname
-                    runHook postInstall
-                  '';
-                };
-
-              unidic-novel =
-                let
-                  pname = "unidic-novel";
-                  version = "202308";
-                in
-                pkgs.stdenv.mkDerivation {
-                  inherit pname version;
-
-                  src = pkgs.fetchzip {
-                    url = "https://ccd.ninjal.ac.jp/unidic_archive/2308/${pname}-v${version}.zip";
-                    name = "${pname}-v${version}.zip";
-                    sha256 = "sha256-oKgx/u4HMiwIupWyL95zq2rL4oKQC965kY1lycLm2XE=";
-                    stripRoot = false;
-                  };
-
-                  phases = [
-                    "unpackPhase"
-                    "installPhase"
-                  ];
-                  installPhase = ''
-                    cd $pname
-                    runHook preInstall
-                    install -d $out/share/mecab/dic/$pname
-                    install -m 644 dicrc *.def *.bin *.dic $out/share/mecab/dic/$pname
-                    runHook postInstall
-                  '';
-                };
+              runtime = import ./nix/runtime.nix { inherit pkgs; };
             in
             pkgs.mkShell {
               shellHook = ''
-                export TSIP=$(ip -o -4 addr show tailscale0 | awk '{ split($4, ip_addr, "/"); print ip_addr[1] }')
+                load_agenix_secret() {
+                  if ! printenv "$1" >/dev/null 2>&1 && [ -r "$2" ]; then
+                    secret_value=$(cat "$2")
+                    export "$1=$secret_value"
+                    unset secret_value
+                  fi
+                }
 
-                export AZURE_API_VERSION="2024-12-01-preview"
-                export AZURE_AI_API_KEY=$(cat /run/agenix/azure-ai-eastus2-key)
-                export AZURE_AI_API_BASE=https://admin-m6rf6uyv-eastus2.services.ai.azure.com/
-                export AZURE_API_KEY=$(cat /run/agenix/azure-ai-eastus2-key)
-                export AZURE_API_BASE=https://admin-m6rf6uyv-eastus2.services.ai.azure.com/
+                if command -v ip >/dev/null 2>&1 && ip link show tailscale0 >/dev/null 2>&1; then
+                  export TSIP=$(ip -o -4 addr show tailscale0 | awk '{ split($4, ip_addr, "/"); print ip_addr[1] }')
+                fi
 
-                export OPENAI_API_VERSION="2024-02-15-preview"
-                export OPENAI_API_KEY=$(cat /run/agenix/openai-api)
-
-                export AWS_ACCESS_KEY_ID=$(cat /run/agenix/aws-access-key-id)
-                export AWS_SECRET_ACCESS_KEY=$(cat /run/agenix/aws-secret-access-key)
-                # export AWS_REGION_NAME=ap-northeast-1
-                export AWS_REGION_NAME=us-west-2
-
-                export OPENROUTER_API_KEY=$(cat /run/agenix/openrouter-key)
-
-                export YOUTUBE_API_KEY=$(cat /run/agenix/youtube-data-api)
-
-                export HF_TOKEN=$(cat /run/agenix/hf-token)
+                load_agenix_secret HF_TOKEN /run/agenix/hf-token
+                if [ -z "$AZURE_API_VERSION" ]; then
+                  export AZURE_API_VERSION="2024-12-01-preview"
+                fi
+                if [ -z "$AZURE_API_BASE" ]; then
+                  export AZURE_API_BASE="https://admin-m6rf6uyv-eastus2.services.ai.azure.com/"
+                fi
+                if [ -z "$AZURE_API_KEY" ]; then
+                  load_agenix_secret AZURE_API_KEY /run/agenix/azure-ai-eastus2-key
+                fi
+                if [ -z "$AZURE_AI_API_KEY" ]; then
+                  load_agenix_secret AZURE_AI_API_KEY /run/agenix/azure-ai-eastus2-key
+                fi
+                if [ -z "$AZURE_AI_API_BASE" ]; then
+                  export AZURE_AI_API_BASE="https://admin-m6rf6uyv-eastus2.services.ai.azure.com/"
+                fi
+                if [ -z "$OPENAI_API_VERSION" ]; then
+                  export OPENAI_API_VERSION="2024-02-15-preview"
+                fi
+                if [ -z "$OPENAI_API_KEY" ]; then
+                  load_agenix_secret OPENAI_API_KEY /run/agenix/openai-api
+                fi
+                load_agenix_secret AWS_ACCESS_KEY_ID /run/agenix/aws-access-key-id
+                load_agenix_secret AWS_SECRET_ACCESS_KEY /run/agenix/aws-secret-access-key
+                if [ -z "$AWS_REGION_NAME" ]; then
+                  export AWS_REGION_NAME="us-west-2"
+                fi
+                load_agenix_secret OPENROUTER_API_KEY /run/agenix/openrouter-key
+                load_agenix_secret YOUTUBE_API_KEY /run/agenix/youtube-data-api
+                ${runtime.shellEnvironment}
               '';
               # The Nix packages provided in the environment
-              packages = [
-                pkgs.mecab
-                pkgs.jumanpp
-                pkgs.sentencepiece
-                unidic-cwj
-                unidic-csj
-                unidic-novel
-                # # Python plus helper tools
-                # (python.withPackages (
-                #   ps: with ps; [
-                #     virtualenv # Virtualenv
-                #     pip # The pip installer
-                #   ]
-                # ))
-              ];
+              packages = runtime.packages;
             };
         }
       );
