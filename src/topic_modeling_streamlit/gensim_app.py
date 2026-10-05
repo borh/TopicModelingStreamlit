@@ -300,6 +300,7 @@ for name, table, include_index in [
         table.to_csv(index=include_index).encode("utf-8"),
         file_name=f"lda-{name.lower().replace(' ', '-')}.csv",
         mime="text/csv",
+        on_click="ignore",
     )
 
 with st.expander("PyLDAvis"):

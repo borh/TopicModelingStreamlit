@@ -95,6 +95,7 @@ def test_training_is_explicit_and_labels_survive_navigation(lda_app):
     app.selectbox[0].select(1).run()
     assert app.session_state["lda_labels"] == {0: "Pets"}
     assert len(app.get("download_button")) == 5
+    assert all(download.proto.ignore_rerun for download in app.get("download_button"))
     app.text_area[0].set_value("CAT CAT CAT")
     button(app, "Infer topics").click().run()
     assert not app.exception
