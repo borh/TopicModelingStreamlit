@@ -1,6 +1,7 @@
 import logging
 import os
 from colorsys import hsv_to_rgb, rgb_to_hsv
+from html import escape
 from operator import itemgetter
 from pathlib import Path
 
@@ -14,6 +15,8 @@ import streamlit as st
 from fugashi import Tagger
 from IPython.display import HTML, display
 from pyLDAvis import gensim_models
+
+from topic_modeling_streamlit.cache_locks import device_compute_lock
 
 logging.basicConfig(
     format="%(asctime)s : %(levelname)s : %(message)s", level=logging.INFO
@@ -73,7 +76,7 @@ def get_lemma(token):
 def tokenize(text, tagger, lemma=False, remove_proper_nouns=False):
     tokens = []
     for token in tagger(text):
-        if remove_proper_nouns and token.feature[1] == "固有名詞":
+        if remove_proper_nouns and token.feature.pos2 == "固有名詞":
             tokens.append("")
             continue
         if token == "<EOS>":
@@ -81,6 +84,13 @@ def tokenize(text, tagger, lemma=False, remove_proper_nouns=False):
 
         tokens.append(get_lemma(token) if lemma else token.surface)
     return tokens
+
+
+def infer_text(text, tagger, dictionary):
+    with device_compute_lock("cpu"):
+        processed = tokenize(text, tagger, lemma=True, remove_proper_nouns=True)
+        surfaces = tokenize(text, tagger)
+    return processed, surfaces, dictionary.doc2bow(processed)
 
 
 def chunk_tokens(
@@ -131,11 +141,10 @@ def chunk_tokens(
         return labels, authors, chunks
 
 
-DEFAULT_TAGGER = get_tagger()
-
-
 @st.cache_data
-def create_chunked_data(_all_metadata, chunksize=2000, tagger=DEFAULT_TAGGER):
+def create_chunked_data(_all_metadata, chunksize=2000, tagger=None):
+    if tagger is None:
+        tagger = get_tagger()
     labels = []
     filenames = []
     authors = []
@@ -226,7 +235,12 @@ def topic2dense(topic_probs, num_topics):
 @st.cache_data
 def create_dtm(cache_key, _model, num_topics, corpus, authors, collapsed=True):
     _ = cache_key
-    dt = [topic2dense(_model.get_document_topics(d), _model.num_topics) for d in corpus]
+    dt = [
+        topic2dense(
+            _model.get_document_topics(d, minimum_probability=0), _model.num_topics
+        )
+        for d in corpus
+    ]
     dtm = pd.DataFrame(dt, columns=range(_model.num_topics), index=authors)
     if collapsed:
         return dtm.groupby(level=0).mean()
@@ -282,7 +296,9 @@ def generate_topic_colormap(n):
 def colorize(s, fg, topicid=None, border=None):
     border = f"border:1px solid {border};" if border else ""
     token = (
-        f"<ruby>{s}<rp>(</rp><rt>{topicid}</rt><rp>)</rp></ruby>" if topicid else f"{s}"
+        f"<ruby>{escape(str(s))}<rp>(</rp><rt>{topicid}</rt><rp>)</rp></ruby>"
+        if topicid is not None
+        else escape(str(s))
     )
     return f"<span style='color:{fg};background-color:white;{border}'>{token}</span>"
 
@@ -309,7 +325,7 @@ def colorize_topics(
     inferred_topics = sorted(model[sample], key=itemgetter(1), reverse=True)
     inferred_topic_ids = {topic_id for topic_id, _ in inferred_topics}
     o = "<div style='background-color:white;'>"
-    o += f"<p>{labels[docid]}: {inferred_topics}</p>"
+    o += f"<p>{escape(str(labels[docid]))}: {inferred_topics}</p>"
     for position, token in enumerate(docs[docid]):
         if token in dictionary.token2id:
             top_token_topics = sorted(

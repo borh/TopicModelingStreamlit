@@ -343,6 +343,7 @@ def chunk_tokens(
     lemma: bool = False,
     remove_proper_nouns: bool = False,
     chunk_size: int = 2000,
+    min_chunksize: int = 1,
 ) -> tuple[list[str], list[str], list[list[str]]]:
     """
     Split a text into ~chunk_size-token chunks using sentence boundaries.
@@ -379,7 +380,10 @@ def chunk_tokens(
             authors.append(author)
             current_chunk += 1
             chunks.append([])
-    if chunks and len(chunks[-1]) < chunk_size:
+    if len(chunks[-1]) >= min_chunksize:
+        labels.append(f"{filename}_{current_chunk}")
+        authors.append(author)
+    else:
         chunks.pop()
     return labels, authors, chunks
 
@@ -387,6 +391,8 @@ def chunk_tokens(
 def create_chunked_data(
     all_metadata: pl.DataFrame | None,
     chunksize: int = 2000,
+    min_chunksize: int = 1,
+    chunks: int = 0,
 ) -> tuple[pl.DataFrame, list[list[str]], list[list[str]]]:
     """
     Chunk Aozora Japanese texts into token lists for the gensim app.
@@ -398,6 +404,10 @@ def create_chunked_data(
     """
     if all_metadata is None:
         raise FileNotFoundError("Aozora metadata not found. Provide groups.csv.")
+    if not 1 <= min_chunksize <= chunksize or chunks < 0:
+        raise ValueError(
+            "Chunk sizes must be positive with minimum <= maximum; chunk limit must be nonnegative."
+        )
 
     from topic_modeling_streamlit.gensim_lib import get_tagger
 
@@ -412,23 +422,33 @@ def create_chunked_data(
     for file in Path("./Aozora-Bunko-Fiction-Selection-2022-05-30/Plain/").glob(
         "*.txt"
     ):
-        chunk_labels, chunk_authors, chunks = chunk_tokens(
+        chunk_labels, chunk_authors, token_chunks = chunk_tokens(
             file,
             tagger,
             all_metadata,
             lemma=True,
             remove_proper_nouns=True,
             chunk_size=chunksize,
+            min_chunksize=min_chunksize,
         )
+        if chunks:
+            chunk_labels = chunk_labels[:chunks]
+            chunk_authors = chunk_authors[:chunks]
+            token_chunks = token_chunks[:chunks]
         labels.extend(chunk_labels)
         filenames.extend([file.name] * len(chunk_labels))
         authors.extend(chunk_authors)
-        docs.extend(chunks)
+        docs.extend(token_chunks)
 
         _, _, original_chunks = chunk_tokens(
-            file, tagger, all_metadata, lemma=False, chunk_size=chunksize
+            file,
+            tagger,
+            all_metadata,
+            lemma=False,
+            chunk_size=chunksize,
+            min_chunksize=min_chunksize,
         )
-        original_docs.extend(original_chunks)
+        original_docs.extend(original_chunks[: len(chunk_labels)])
 
     base = pl.DataFrame(
         {
@@ -444,4 +464,4 @@ def create_chunked_data(
         pl.col("author_ja").alias("author"),
         pl.col("title_ja").alias("title"),
     ).join(base.select(pl.col("filename", "label", "docid", "length")), on="filename")
-    return enriched, docs, original_docs
+    return enriched.sort("docid"), docs, original_docs
