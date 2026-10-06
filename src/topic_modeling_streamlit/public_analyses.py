@@ -75,7 +75,10 @@ def public_view(app: str) -> None:
             raise ValueError("Published analysis is too large.")
         data = json.loads(selected.read_bytes())
         st.dataframe(
-            pd.read_csv(BytesIO(base64.b64decode(data["topics"], validate=True))),
+            pd.read_csv(
+                BytesIO(base64.b64decode(data["topics"], validate=True)),
+                keep_default_na=False,
+            ),
             hide_index=True,
         )
         for name, encoded in data["downloads"].items():

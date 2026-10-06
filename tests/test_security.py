@@ -182,14 +182,14 @@ def test_lightweight_viewer_does_not_import_model_libraries(tmp_path, monkeypatc
     import sys
 
     monkeypatch.chdir(tmp_path)
-    topics = b"topic_id,label\n0,example\n"
+    topics = b"topic_id,label\n0,NA\n"
     public_analyses.publish_analysis("gensim", "a" * 16, topics, {"topics": topics})
     code = """
 import sys
 from streamlit.testing.v1 import AppTest
 app = AppTest.from_file(sys.argv[1], default_timeout=20).run()
 assert not app.exception
-assert app.dataframe[0].value.label.tolist() == ['example']
+assert app.dataframe[0].value.label.tolist() == ['NA']
 assert 'torch' not in sys.modules
 assert 'gensim' not in sys.modules
 assert 'bertopic' not in sys.modules
