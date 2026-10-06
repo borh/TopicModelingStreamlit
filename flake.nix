@@ -34,6 +34,10 @@
         pkgs = import nixpkgs { system = "x86_64-linux"; };
         module = self.nixosModules.default;
       };
+      checks.x86_64-linux.public-proxy = import ./nix/check-public-proxy.nix {
+        pkgs = import nixpkgs { system = "x86_64-linux"; };
+      };
+      lib.publicCaddyConfig = import ./nix/public-proxy.nix;
       nixosModules.default = import ./nix/service.nix { source = self; };
       formatter = forAllSystems ({ pkgs }: pkgs.nixfmt);
 

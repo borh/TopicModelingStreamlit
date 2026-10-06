@@ -193,10 +193,10 @@ def test_disk_cache_survives_process_restart_and_concurrent_requests(
     docs = [["cat", "pet"], ["dog", "pet"]]
     with (
         patch("gensim.models.LdaModel", wraps=LdaModel) as train,
-        ThreadPoolExecutor(max_workers=5) as pool,
+        ThreadPoolExecutor(max_workers=8) as pool,
     ):
         results = list(
-            pool.map(lambda _: load_or_train_lda("shared", docs, **settings), range(5))
+            pool.map(lambda _: load_or_train_lda("shared", docs, **settings), range(8))
         )
     assert train.call_count == 1
     for model, dictionary, corpus in results:

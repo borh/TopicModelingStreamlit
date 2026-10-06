@@ -23,8 +23,17 @@ from topic_modeling_streamlit.gensim_lib import (
     parse_topic_labels,
     pyldavis_html,
 )
+from topic_modeling_streamlit.public_analyses import public_view, publish_button
+from topic_modeling_streamlit.security import (
+    MAX_LABEL_CHARS,
+    MAX_TEXT_CHARS,
+    csv_bytes,
+    require_compute_access,
+    validate_upload,
+)
 
 st.set_page_config(layout="wide")
+public_view("gensim")
 st.title("Gensim (LDA) を使用したトピックモデル")
 
 DEFAULTS = {
@@ -65,8 +74,23 @@ if st.sidebar.button("Apply preset"):
     )
 
 
+SETTING_LIMITS = {
+    "Random state": 2**32 - 1,
+    "Topics": 200,
+    "Iterations": 2000,
+    "Training batch size": 4000,
+    "Passes": 20,
+    "Chunk size (tokens)": 8000,
+    "Min chunk size (tokens)": 8000,
+    "Chunks per work (0 = all)": 1000,
+    "Min document frequency": 50000,
+}
+
+
 def setting(name, minimum):
-    return st.number_input(name, min_value=minimum, key=f"lda_{name}")
+    return st.number_input(
+        name, min_value=minimum, max_value=SETTING_LIMITS[name], key=f"lda_{name}"
+    )
 
 
 with st.sidebar.form("lda_settings"):
@@ -188,6 +212,7 @@ def create_lda_model(
 
 if compute:
     try:
+        require_compute_access()
         if min_chunk_size > chunk_size:
             raise ValueError("Min chunk size must not exceed chunk size.")
         revision = source_revision(dictionary_name)
@@ -364,6 +389,7 @@ topic_id = st.selectbox(
 with st.form("topic_label"):
     label = st.text_input(
         "Topic label",
+        max_chars=MAX_LABEL_CHARS,
         value=labels.get(topic_id, ""),
         key=f"label_{analysis_key}_{st.session_state['lda_label_revision']}_{topic_id}",
     )
@@ -400,6 +426,7 @@ label_table = pd.DataFrame(
         "label": [labels.get(topic, "") for topic in range(model.num_topics)],
     }
 )
+exports = {}
 for name, table, include_index in [
     ("Topic words", word_table, False),
     ("Document topics", document_table, False),
@@ -407,13 +434,17 @@ for name, table, include_index in [
     ("Genre topics", genre_topics, True),
     ("Topic labels", label_table, False),
 ]:
+    data = csv_bytes(table, index=include_index)
+    exports[name.lower().replace(" ", "-")] = data
     st.download_button(
         f"Download {name.lower()}",
-        table.to_csv(index=include_index).encode("utf-8"),
+        data,
         file_name=f"lda-{name.lower().replace(' ', '-')}.csv",
         mime="text/csv",
         on_click="ignore",
     )
+
+publish_button("gensim", analysis_key, exports["topic-words"], exports)
 
 with st.expander("Topic similarity"):
     from sklearn.metrics.pairwise import cosine_similarity
@@ -488,16 +519,23 @@ st.subheader("入力テキストのトピック推定")
 with st.form("lda_inference"):
     query = st.text_area(
         "Text to infer topics",
+        max_chars=MAX_TEXT_CHARS,
         value="昔あるところに、美しい一人娘をお持ちの王さまとお妃さまがおりました。",
     )
     infer = st.form_submit_button("Infer topics")
 if infer:
-    show_inference(query, "Input text")
+    try:
+        show_inference(query, "Input text")
+    except ValueError as exc:
+        st.error(str(exc))
 
 st.subheader("テキストファイルのトピック推定")
 upload = st.file_uploader("UTF-8 text file", type=["txt"])
 if upload is not None:
     try:
+        validate_upload(upload.getvalue())
         show_inference(upload.getvalue().decode("utf-8"), upload.name)
     except UnicodeDecodeError:
         st.error("The file must be UTF-8 encoded text.")
+    except ValueError as exc:
+        st.error(str(exc))

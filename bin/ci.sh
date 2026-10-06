@@ -12,5 +12,6 @@ uv run --group dev --locked pytest -q \
   tests/test_nlp_utils.py \
   tests/test_plotting_label_mapping.py \
   tests/test_streamlit_caches.py \
+  tests/test_security.py \
   tests/test_transformers_utils.py \
   tests/test_umap_backend.py

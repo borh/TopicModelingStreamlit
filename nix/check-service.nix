@@ -16,6 +16,7 @@ let
           accelerator = "cuda";
           gpu = "GPU-test";
           gensim.enable = true;
+          publicAccess = true;
         };
       }
     ];
@@ -35,4 +36,10 @@ assert bertopic.environment.CUDA_VISIBLE_DEVICES == "GPU-test";
 assert bertopic.environment.HF_HOME == "/var/lib/topic-modeling/huggingface";
 assert bertopic.serviceConfig.WorkingDirectory == "/var/lib/topic-modeling";
 assert bertopic.serviceConfig.ProtectHome;
+assert bertopic.environment.TOPIC_MODELING_PUBLIC == "1";
+assert bertopic.serviceConfig.MemoryMax == "12G";
+assert bertopic.serviceConfig.CPUQuota == "200%";
+assert bertopic.serviceConfig.TasksMax == 256;
+assert lib.hasInfix "--client.showErrorDetails=none" bertopic.serviceConfig.ExecStart;
+assert lib.hasInfix "--server.maxUploadSize=1" gensim.serviceConfig.ExecStart;
 pkgs.runCommand "topic-modeling-service-contracts" { } "touch $out"

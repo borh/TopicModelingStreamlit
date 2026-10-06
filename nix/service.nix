@@ -20,6 +20,12 @@ let
       XDG_CACHE_HOME = "${state}/cache";
       XDG_CONFIG_HOME = "${state}/config";
       OMP_NUM_THREADS = "2";
+      OPENBLAS_NUM_THREADS = "2";
+      MKL_NUM_THREADS = "2";
+      POLARS_MAX_THREADS = "2";
+      NUMBA_NUM_THREADS = "2";
+      TOKENIZERS_PARALLELISM = "false";
+      TOPIC_MODELING_PUBLIC = if cfg.publicAccess then "1" else "0";
     }
     // lib.optionalAttrs (cfg.accelerator == "cuda") {
       CUDA_VISIBLE_DEVICES = cfg.gpu;
@@ -83,6 +89,7 @@ in
       default = "/data/topic-modeling";
       description = "Directory containing the Aozora and Standard Ebooks corpus directories.";
     };
+    publicAccess = lib.mkEnableOption "campus-only computation behind a proxy that overwrites X-Topic-Client-IP";
     gensim.enable = lib.mkEnableOption "the Gensim app on port 3332";
   };
   config = lib.mkIf cfg.enable {
@@ -126,7 +133,19 @@ in
         path = runtime.packages;
         inherit environment;
         serviceConfig = serviceConfig // {
-          ExecStart = "${state}/venv/bin/python -m streamlit run ${source}/src/topic_modeling_streamlit/${app.file} --server.headless=true --server.address=127.0.0.1 --server.port=${toString app.port} --server.baseUrlPath=topic-modeling-${name} --server.fileWatcherType=none --browser.gatherUsageStats=false";
+          MemoryHigh = "8G";
+          MemoryMax = "12G";
+          CPUQuota = "200%";
+          TasksMax = 256;
+          ProtectKernelTunables = true;
+          ProtectControlGroups = true;
+          RestrictSUIDSGID = true;
+          RestrictAddressFamilies = [
+            "AF_UNIX"
+            "AF_INET"
+            "AF_INET6"
+          ];
+          ExecStart = "${state}/venv/bin/python -m streamlit run ${source}/src/topic_modeling_streamlit/${app.file} --server.headless=true --server.address=127.0.0.1 --server.port=${toString app.port} --server.baseUrlPath=topic-modeling-${name} --server.fileWatcherType=none --browser.gatherUsageStats=false --client.showErrorDetails=none --server.maxUploadSize=1 --server.maxMessageSize=16";
           Restart = "on-failure";
           RestartSec = 5;
         };

@@ -48,6 +48,16 @@ from topic_modeling_streamlit.presets import (
     NON_LLM_REPRESENTATION_OPTIONS,
     PRESETS,
 )
+from topic_modeling_streamlit.public_analyses import public_view, publish_button
+from topic_modeling_streamlit.security import (
+    MAX_LABEL_CHARS,
+    MAX_PROMPT_CHARS,
+    MAX_TEXT_CHARS,
+    csv_bytes,
+    require_compute_access,
+    validate_text,
+    validate_upload,
+)
 from topic_modeling_streamlit.streamlit_caches import find_topics as find_topics_cached
 from topic_modeling_streamlit.streamlit_caches import (
     topics_per_class,
@@ -81,7 +91,7 @@ def _retry_extract_topics(rep, model, docs_df, c_tf_idf, topics):
     return rep.extract_topics(model, docs_df, c_tf_idf, topics)
 
 
-@st.cache_data(show_spinner=False)
+@st.cache_data(max_entries=5, ttl=3600, show_spinner=False)
 def cached_llm_topic_suggestion(
     cache_key: str,
     aspect: str,
@@ -92,6 +102,8 @@ def cached_llm_topic_suggestion(
     device: str,
 ) -> str:
     _ = cache_key
+    require_compute_access()
+    validate_text(prompt, MAX_PROMPT_CHARS)
     return llm_topic_suggestion(aspect, prompt, topic_id, _model, reps_docs, device)
 
 
@@ -111,6 +123,7 @@ def apply_selected_preset() -> None:
 
 
 st.set_page_config(layout="wide")
+public_view("bertopic")
 
 
 st.title("BERTopic Playground")
@@ -166,7 +179,7 @@ language = st.sidebar.radio(
 )
 
 
-@st.cache_data(show_spinner=True)
+@st.cache_data(max_entries=5, ttl=3600, show_spinner=True)
 def generate_labels(
     cache_key: str,
     nr_words: int,
@@ -266,6 +279,7 @@ def rep_settings_fragment() -> None:
     with st.expander("Prompt", expanded=False):
         st.text_area(
             "Prompt",
+            max_chars=MAX_PROMPT_CHARS,
             key="prompt_option",
             label_visibility="collapsed",
             help="Custom prompt for topic labeling. Use [DOCUMENTS] and [KEYWORDS] as placeholders.",
@@ -317,6 +331,7 @@ The embedding model transforms each document into a dense vector representation 
         settings.number_input(
             "Reduce to n topics (0 = auto)",
             min_value=0,
+            max_value=200,
             step=1,
             key="nr_topics_option",
             help="""Fix the number of topics (0 = let BERTopic decide automatically).
@@ -476,6 +491,7 @@ The embedding model transforms each document into a dense vector representation 
 
         settings.text_input(
             "Filter tokens (regex)",
+            max_chars=500,
             key="surface_filter_option",
             help="Enter a regex pattern; any token matching it will be excluded. Use `(a|b)` etc. to specify multiple patterns.\nIn order to strip all punctuation character tokens, you can try: `^[\\u3000-\\u303f\\uff00-\\uffef\\p{P}]+$`",
         )
@@ -513,6 +529,7 @@ The embedding model transforms each document into a dense vector representation 
         settings.number_input(
             "Chunk size (tokens)",
             min_value=10,
+            max_value=8000,
             value=100,
             step=10,
             key="chunksize_option",
@@ -544,6 +561,7 @@ Chunks respect sentence boundaries when possible.""",
         settings.number_input(
             "Chunks per document (0 = all)",
             min_value=0,
+            max_value=1000,
             value=50,
             step=1,
             key="chunks_option",
@@ -614,7 +632,7 @@ else:
         st.stop()
 
 
-@st.cache_data(show_spinner=True, show_time=True)
+@st.cache_data(max_entries=5, ttl=3600, show_spinner=True, show_time=True)
 def create_corpus(
     all_metadata: pl.DataFrame | None,
     language: str,
@@ -893,9 +911,11 @@ if not st.session_state.applied_representation_model:
     c01, c02 = st.columns(2)
 
     with c01:
-        top_n_topics = st.number_input("Top n topics", min_value=1, value=10)
+        top_n_topics = st.number_input(
+            "Top n topics", min_value=1, max_value=200, value=10
+        )
     with c02:
-        n_words = st.number_input("n words", min_value=1, value=8)
+        n_words = st.number_input("n words", min_value=1, max_value=50, value=8)
 
     st.write(
         topic_model.visualize_barchart(
@@ -932,7 +952,7 @@ if not st.session_state.applied_representation_model:
 "## Document and topic 2D plot (UMAP)"
 
 
-@st.cache_data(show_spinner=True, show_time=True)
+@st.cache_data(max_entries=5, ttl=3600, show_spinner=True, show_time=True)
 def visualize_docs(
     cache_key: str,
     color_by: str,
@@ -1058,7 +1078,7 @@ with st.expander("Explanation"):
 "## Corpus topic browser"
 
 
-@st.cache_data(show_spinner=True)
+@st.cache_data(max_entries=5, ttl=3600, show_spinner=True)
 def get_author_works(metadata: pl.DataFrame, author: str | None) -> list[str]:
     return (
         metadata.filter(pl.col("author") == author)
@@ -1381,7 +1401,9 @@ elif selected_tab == "Label Management":
 
     current = strip_topic_prefix([topic_model.custom_labels_[index]], [tid])[0]
     st.session_state.setdefault(f"lbl_input_{tid}", current)
-    new_lbl = st.text_input("Edit label", key=f"lbl_input_{tid}")
+    new_lbl = st.text_input(
+        "Edit label", max_chars=MAX_LABEL_CHARS, key=f"lbl_input_{tid}"
+    )
     llm_choices = LLM_REPRESENTATION_OPTIONS
     llm_options = ["None"] + llm_choices
 
@@ -1494,6 +1516,7 @@ elif selected_tab == "Label Management":
         with st.expander("Suggestion Prompt", expanded=False):
             st.text_area(
                 "Suggestion Prompt",
+                max_chars=MAX_PROMPT_CHARS,
                 value=initial_prompt,
                 key="sugg_prompt_override",
                 label_visibility="collapsed",
@@ -1561,7 +1584,7 @@ elif selected_tab == "Label Management":
 
         st.download_button(
             "Download labels CSV",
-            df_lbl.write_csv().encode("utf-8"),
+            csv_bytes(df_lbl.to_pandas()),
             file_name="custom_topic_labels.csv",
             mime="text/csv",
             help="Download current topic labels as CSV for editing and re-upload",
@@ -1570,39 +1593,46 @@ elif selected_tab == "Label Management":
     with col_ul:
         up = st.file_uploader("Upload labels CSV", type="csv")
         if up:
-            # Check if we've already processed this file to avoid update loops
-            upload_key = f"processed_upload_{hash(up.name + str(up.size))}"
+            data = up.getvalue()
+            upload_key = f"processed_upload_{xxhash.xxh3_64_hexdigest(data)}"
             if upload_key not in st.session_state:
-                df_up = pl.read_csv(up)
-                if {"topic_id", "custom_label"}.issubset(df_up.columns):
-                    # Create mapping from actual topic IDs to custom_labels_ indices
-                    topic_info = topic_model.get_topic_info().reset_index(drop=True)
-                    actual_topic_ids = topic_info["Topic"].tolist()
-                    topic_id_to_index = {
-                        tid: i for i, tid in enumerate(actual_topic_ids)
-                    }
-
+                try:
+                    validate_upload(data)
+                    df_up = pl.read_csv(data)
+                    if set(df_up.columns) != {"topic_id", "custom_label"}:
+                        raise ValueError(
+                            "CSV must contain 'topic_id' and 'custom_label'."
+                        )
+                    actual_topic_ids = topic_model.get_topic_info()["Topic"].tolist()
+                    imported = {}
                     for row in df_up.to_dicts():
-                        topic_id = int(row["topic_id"])
-                        clean_label = row["custom_label"]
-
-                        # Find the index in custom_labels_ for this topic_id
-                        if topic_id in topic_id_to_index:
-                            index = topic_id_to_index[topic_id]
-                            # Reconstruct full label with topic_id prefix for internal storage
-                            full_label = f"{topic_id}: {clean_label}"
-                            topic_model.custom_labels_[index] = full_label
-                    topic_model.set_topic_labels(topic_model.custom_labels_)
+                        topic_id = row["topic_id"]
+                        label = row["custom_label"] or ""
+                        if (
+                            not isinstance(topic_id, int)
+                            or topic_id not in actual_topic_ids
+                            or topic_id in imported
+                        ):
+                            raise ValueError(
+                                "Topic IDs must be unique integers within this model's topic range."
+                            )
+                        validate_text(str(label), MAX_LABEL_CHARS)
+                        imported[topic_id] = str(label)
+                    labels = [
+                        f"{topic}: {imported[topic]}"
+                        if topic in imported
+                        else topic_model.custom_labels_[index]
+                        for index, topic in enumerate(actual_topic_ids)
+                    ]
+                    topic_model.set_topic_labels(labels)
                     st.session_state[upload_key] = True
-                    st.session_state.active_tab_index = (
-                        2  # Stay on Label Management tab
-                    )
+                    st.session_state.active_tab_index = 2
                     st.success(
                         "Uploaded & applied labels. Refreshing visualizations..."
                     )
                     st.rerun()
-                else:
-                    st.error("CSV must contain 'topic_id' and 'custom_label'")
+                except (ValueError, pl.exceptions.PolarsError) as exc:
+                    st.error(f"Unable to import labels: {exc}")
 
     with col_rst:
         if st.button("Reset to defaults"):
@@ -1619,6 +1649,17 @@ elif selected_tab == "Label Management":
             st.info("✅ Labels were recently reset to defaults")
             st.session_state["labels_just_reset"] = False
 
+publication_topics = topic_info_with_custom_names(
+    topic_model.get_topic_info(), topic_model.custom_labels_
+)[["Topic", "Count", "CustomName"]]
+publication_downloads = {"topics": csv_bytes(publication_topics)}
+publish_button(
+    "bertopic",
+    xxhash.xxh3_64_hexdigest(str(topic_model_path).encode()),
+    publication_downloads["topics"],
+    publication_downloads,
+)
+
 "## Topic information"
 
 ttab1, ttab2, ttab3, ttab4, ttab5 = st.tabs(
@@ -1632,7 +1673,7 @@ ttab1, ttab2, ttab3, ttab4, ttab5 = st.tabs(
 )
 
 
-@st.cache_data(show_spinner=True, show_time=True)
+@st.cache_data(max_entries=5, ttl=3600, show_spinner=True, show_time=True)
 def visualize_datamap(
     cache_key: str,
     docs: list[str],
@@ -1677,13 +1718,13 @@ def visualize_datamap(
             raise
 
 
-@st.cache_data(show_spinner=True, show_time=True)
+@st.cache_data(max_entries=5, ttl=3600, show_spinner=True, show_time=True)
 def cached_visualize_hierarchy(cache_key: str, _model: BERTopic):
     _ = cache_key
     return _model.visualize_hierarchy(custom_labels=True)
 
 
-@st.cache_data(show_spinner=True, show_time=True)
+@st.cache_data(max_entries=5, ttl=3600, show_spinner=True, show_time=True)
 def cached_visualize_heatmap(cache_key: str, _model: BERTopic):
     _ = cache_key
     return _model.visualize_heatmap(custom_labels=True)
@@ -1736,13 +1777,13 @@ with ttab2:
     )
 
 
-@st.cache_data(show_spinner=True, show_time=True)
+@st.cache_data(max_entries=5, ttl=3600, show_spinner=True, show_time=True)
 def cached_visualize_topics(cache_key: str, _model: BERTopic):
     _ = cache_key
     return _model.visualize_topics(custom_labels=True)
 
 
-@st.cache_data(show_spinner=True, show_time=True)
+@st.cache_data(max_entries=5, ttl=3600, show_spinner=True, show_time=True)
 def cached_visualize_topics_per_class_from_precomputed(
     cache_key: str, topics_per_class_data: pd.DataFrame, top_n: int, _model: BERTopic
 ) -> Figure:
@@ -1868,7 +1909,7 @@ with ttab5:
 
 st.markdown("# Topic query")
 
-topic_query = st.text_input("Find topics", key="topic_query")
+topic_query = st.text_input("Find topics", max_chars=MAX_TEXT_CHARS, key="topic_query")
 
 if topic_query:
     try:
@@ -1936,6 +1977,7 @@ use_embedding_model_option = st.checkbox("Use embedding model", False)
 
 example_text = st.text_area(
     f"Token topic approximation using {'embedding' if use_embedding_model_option else 'c-tf-idf'} model. Sample text from {'https://www.aozora.gr.jp/cards/002231/files/62105_76819.html' if language == 'Japanese' else 'https://mysterytribune.com/suspense-novel-excerpt-the-echo-killing-by-christi-daugherty/'}",
+    max_chars=MAX_TEXT_CHARS,
     value=(
         """金の羽根
 昔あるところに、月にもお日さまにも増して美しい一人娘をお持ちの王さまとお妃さまがおりました。娘はたいそうおてんばで、宮殿中の物をひっくり返しては大騒ぎをしていました。"""

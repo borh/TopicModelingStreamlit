@@ -29,7 +29,7 @@ async def main(url, chunks, device):
             args=["--no-sandbox"],
         )
         try:
-            contexts = [await browser.new_context() for _ in range(5)]
+            contexts = [await browser.new_context() for _ in range(8)]
             pages = [await context.new_page() for context in contexts]
 
             async def prepare(index, page):
@@ -54,7 +54,7 @@ async def main(url, chunks, device):
             print(
                 json.dumps(
                     {
-                        "phase": "five computations",
+                        "phase": "eight computations",
                         "seconds": round(time.monotonic() - start, 2),
                         "metrics": [
                             await page.locator(
@@ -92,7 +92,7 @@ async def main(url, chunks, device):
             print(
                 json.dumps(
                     {
-                        "phase": "three searches and two recomputations",
+                        "phase": "three searches and five recomputations",
                         "seconds": round(time.monotonic() - start, 2),
                         "exceptions": [
                             await page.locator(
@@ -110,7 +110,7 @@ async def main(url, chunks, device):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="Check five independent sessions against a running app using the selected device. Run with uv tool run --from playwright python bin/check_concurrent_users.py URL."
+        description="Check eight independent sessions against a running app using the selected device. Run with uv tool run --from playwright python bin/check_concurrent_users.py URL."
     )
     parser.add_argument("url")
     parser.add_argument("--chunks", type=int, default=10)

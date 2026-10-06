@@ -19,6 +19,14 @@ from IPython.display import HTML, display
 from pyLDAvis import gensim_models
 
 from topic_modeling_streamlit.cache_locks import device_compute_lock, model_cache_lock
+from topic_modeling_streamlit.security import (
+    MAX_DOCUMENTS,
+    MAX_LABEL_CHARS,
+    check_cache_capacity,
+    require_compute_access,
+    validate_text,
+    validate_upload,
+)
 
 logging.basicConfig(
     format="%(asctime)s : %(levelname)s : %(message)s", level=logging.INFO
@@ -54,7 +62,7 @@ logging.basicConfig(
 #     return tokens
 #
 #
-@st.cache_data
+@st.cache_data(max_entries=5, ttl=3600)
 def get_metadata():
     metadata_df = pl.read_csv(
         "Aozora-Bunko-Fiction-Selection-2022-05-30/groups.csv", separator="\t"
@@ -96,6 +104,7 @@ def tokenize(text, tagger, lemma=False, remove_proper_nouns=False, pos_filter=()
 def infer_text(
     text, tagger, dictionary, lemma=True, remove_proper_nouns=True, pos_filter=()
 ):
+    validate_text(text)
     with device_compute_lock("cpu"):
         processed = tokenize(text, tagger, lemma, remove_proper_nouns, pos_filter)
         surfaces = tokenize(text, tagger)
@@ -150,7 +159,7 @@ def chunk_tokens(
         return labels, authors, chunks
 
 
-@st.cache_data
+@st.cache_data(max_entries=5, ttl=3600)
 def create_chunked_data(_all_metadata, chunksize=2000, tagger=None):
     if tagger is None:
         tagger = get_tagger()
@@ -210,7 +219,7 @@ def create_chunked_data(_all_metadata, chunksize=2000, tagger=None):
 
 
 # @st.cache_resource
-@st.cache_data(show_spinner=True)
+@st.cache_data(max_entries=5, ttl=3600, show_spinner=True)
 def pyldavis_html(cache_key, _model, corpus, _dictionary) -> str:
     _ = cache_key
     data = gensim_models.prepare(
@@ -226,7 +235,7 @@ def pyldavis_html(cache_key, _model, corpus, _dictionary) -> str:
     return html
 
 
-@st.cache_data
+@st.cache_data(max_entries=5, ttl=3600)
 def create_topic_df(_model):
     ttm = pd.DataFrame(
         _model.get_topics(),
@@ -241,7 +250,7 @@ def topic2dense(topic_probs, num_topics):
     return [d.get(i, 0.0) for i in range(num_topics)]
 
 
-@st.cache_data
+@st.cache_data(max_entries=5, ttl=3600)
 def create_dtm(cache_key, _model, num_topics, corpus, authors, collapsed=True):
     _ = cache_key
     dt = [
@@ -377,6 +386,19 @@ def load_or_train_lda(cache_key, docs, **settings):
     from gensim.corpora import Dictionary
     from gensim.models import LdaModel
 
+    require_compute_access()
+    if len(docs) > MAX_DOCUMENTS:
+        raise ValueError(
+            f"Use larger chunks or fewer chunks per work (maximum {MAX_DOCUMENTS:,} documents)."
+        )
+    for name, maximum in {
+        "num_topics": 200,
+        "iterations": 2000,
+        "passes": 20,
+        "chunksize": 4000,
+    }.items():
+        if name in settings and not 1 <= settings[name] <= maximum:
+            raise ValueError(f"{name} must be between 1 and {maximum}.")
     directory = Path("cache/lda")
     directory.mkdir(parents=True, exist_ok=True)
     path = directory / f"{cache_key}.pickle"
@@ -387,6 +409,7 @@ def load_or_train_lda(cache_key, docs, **settings):
                     return pickle.load(file)
             except (EOFError, pickle.UnpicklingError):
                 path.unlink()
+        check_cache_capacity()
         dictionary = Dictionary([[token for token in doc if token] for doc in docs])
         dictionary.filter_extremes(
             no_below=settings.pop("min_df"), no_above=settings.pop("max_df")
@@ -411,6 +434,7 @@ def load_or_train_lda(cache_key, docs, **settings):
             with tempfile.NamedTemporaryFile(dir=directory, delete=False) as file:
                 temporary = Path(file.name)
                 pickle.dump(result, file, protocol=pickle.HIGHEST_PROTOCOL)
+            check_cache_capacity()
             os.replace(temporary, path)
         finally:
             if temporary is not None:
@@ -421,6 +445,7 @@ def load_or_train_lda(cache_key, docs, **settings):
 def parse_topic_labels(data, num_topics):
     from io import BytesIO
 
+    validate_upload(data)
     table = pd.read_csv(BytesIO(data), keep_default_na=False)
     if list(table.columns) != ["topic_id", "label"]:
         raise ValueError("Expected CSV columns: topic_id,label.")
@@ -434,4 +459,6 @@ def parse_topic_labels(data, num_topics):
         raise ValueError(
             "Topic IDs must be unique integers within this model's topic range."
         )
+    for label in table.label:
+        validate_text(str(label), MAX_LABEL_CHARS)
     return {int(topic): str(label).strip() for topic, label in zip(ids, table.label)}

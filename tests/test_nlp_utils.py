@@ -161,3 +161,28 @@ def test_japanese_spacy_revision_tracks_sudachi_core(monkeypatch):
     first = nlp_utils.tokenizer_revision("spaCy", "ja_core_news_sm")
     versions["sudachidict-core"] = "updated"
     assert nlp_utils.tokenizer_revision("spaCy", "ja_core_news_sm") != first
+
+
+def test_token_filter_rejects_invalid_or_expensive_patterns(monkeypatch):
+    import pytest
+
+    class Tokenizer(nlp_utils.SpacyTokenizer):
+        def __init__(self, *args):
+            pass
+
+        def tokenize(self, text):
+            return [text]
+
+    monkeypatch.setitem(nlp_utils.TOKENIZER_MAP, "spaCy", Tokenizer)
+    settings = {
+        "language": "English",
+        "tokenizer_type": "spaCy",
+        "dictionary_type": "en_core_web_sm",
+    }
+    with pytest.raises(ValueError, match="Invalid token filter"):
+        nlp_utils.LanguageProcessor(**settings, surface_filter="(")
+    with pytest.raises(ValueError, match="500"):
+        nlp_utils.LanguageProcessor(**settings, surface_filter="a" * 501)
+    processor = nlp_utils.LanguageProcessor(**settings, surface_filter="(a|aa)+$")
+    with pytest.raises(ValueError, match="took too long"):
+        processor.tokenizer.tokenize("a" * 40 + "!")

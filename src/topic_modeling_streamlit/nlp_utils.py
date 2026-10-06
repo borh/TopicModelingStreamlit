@@ -36,6 +36,14 @@ from topic_modeling_streamlit.cache_locks import (
     device_compute_lock,
     model_cache_lock,
 )
+from topic_modeling_streamlit.model_revisions import model_identity
+from topic_modeling_streamlit.security import (
+    MAX_DOCUMENTS,
+    MAX_PROMPT_CHARS,
+    check_cache_capacity,
+    require_compute_access,
+    validate_text,
+)
 from topic_modeling_streamlit.transformers_utils import (
     load_embedding_model,
     load_transformers_model,
@@ -510,7 +518,9 @@ class CleanTextGeneration(TextGeneration):
         self._orig_model = self.model
 
         def model_with_logging(prompt_text: str, **kwargs):
-            logger.info(f"[LLM Prompt]\n{prompt_text}\n{'-' * 80}")
+            logger.debug(
+                "Generating topic label (%d prompt characters)", len(prompt_text)
+            )
             with device_compute_lock(str(getattr(self._orig_model, "device", "cpu"))):
                 return self._orig_model(prompt_text, **kwargs)
 
@@ -518,7 +528,7 @@ class CleanTextGeneration(TextGeneration):
 
     def _create_prompt(self, docs, topic, topics):
         prompt = super()._create_prompt(docs, topic, topics)
-        logger.info(f"[Created Prompt for Topic {topic}]\n{prompt}\n{'-' * 80}")
+        logger.debug("Created prompt for topic %s (%d characters)", topic, len(prompt))
         return prompt
 
     def extract_topics(
@@ -560,9 +570,10 @@ def get_llm_representation(
     """
     Return a CleanTextGeneration wrapper for a local HF LLM or LiteLLM wrapper.
     """
+    require_compute_access()
+    validate_text(prompt, MAX_PROMPT_CHARS)
     if aspect.startswith("litellm:"):
         actual = aspect.removeprefix("litellm:")
-        print("litellm", prompt)
         return LiteLLM(actual, prompt=prompt)
 
     if aspect.startswith("local:"):
@@ -864,13 +875,21 @@ class LanguageProcessor:
         surface_filter: str | re.Pattern | None = None,
         vocabulary: dict[str, int] | None = None,
     ):
-        # useprovided regex (string or compiled) to drop matching tokens
         if surface_filter is None:
             self.surface_filter = None
-        elif hasattr(surface_filter, "search"):  # already a re.Pattern
-            self.surface_filter = surface_filter
         else:
-            self.surface_filter = re.compile(surface_filter, re.UNICODE)
+            pattern = (
+                surface_filter.pattern
+                if hasattr(surface_filter, "pattern")
+                else surface_filter
+            )
+            validate_text(pattern, 500)
+            try:
+                self.surface_filter = re.compile(
+                    pattern, getattr(surface_filter, "flags", re.UNICODE)
+                )
+            except re.error as exc:
+                raise ValueError("Invalid token filter pattern.") from exc
         self.language = language
         self.segmenter = pysbd.Segmenter(
             language=self.language[:2].lower(), clean=False
@@ -898,8 +917,16 @@ class LanguageProcessor:
         def tokenize_filtered(text: str) -> list[str]:
             toks = orig(text)
             if self.surface_filter:
-                # remove any token matching the regex
-                toks = [t for t in toks if not self.surface_filter.search(t)]
+                try:
+                    toks = [
+                        t
+                        for t in toks
+                        if not self.surface_filter.search(t, timeout=0.01)
+                    ]
+                except TimeoutError as exc:
+                    raise ValueError(
+                        "The token filter took too long. Simplify the regex pattern."
+                    ) from exc
             return toks
 
         self.tokenizer.tokenize = tokenize_filtered
@@ -1234,13 +1261,19 @@ def load_and_persist_model(
     model_kwargs: dict[str, Any] | None = None,
 ) -> tuple[Path, BERTopic, np.ndarray, np.ndarray, list[int], np.ndarray]:
     """Publish a completed cache only after all model files have been saved."""
+    require_compute_access()
+    if len(docs) > MAX_DOCUMENTS:
+        raise ValueError(
+            f"Use larger chunks or fewer chunks per work (maximum {MAX_DOCUMENTS:,} documents)."
+        )
+    validate_text(prompt or "", MAX_PROMPT_CHARS)
     docs_hash = xxhash.xxh3_64_hexdigest(pickle.dumps(docs, pickle.HIGHEST_PROTOCOL))
     settings_hash = xxhash.xxh3_64_hexdigest(
         pickle.dumps(
             (
-                2,
+                3,
                 language,
-                embedding_model,
+                model_identity(embedding_model),
                 tuple(representation_model)
                 if isinstance(representation_model, list)
                 else representation_model,
@@ -1321,6 +1354,7 @@ def load_and_persist_model(
                 return path, topic_model, embeddings, reduced_embeddings, topics, probs
 
         # 2) otherwise compute new or re-save passed-in model
+        check_cache_capacity()
         finished.unlink(missing_ok=True)
         if topic_model is None:
             logger.warning(f"Computing model {path}")
@@ -1362,6 +1396,15 @@ def load_and_persist_model(
             topics = topic_model.topics_
             probs = topic_model.probabilities_
 
+        check_cache_capacity(
+            2
+            * sum(
+                array.nbytes
+                for array in (embeddings, reduced_embeddings, probs)
+                if array is not None
+            )
+            + 64 * 1024**2
+        )
         # 3) persist everything and mark finished
         topic_model.save(
             path,

@@ -58,7 +58,7 @@ def model_cache(tmp_path, monkeypatch):
         settings = {
             "docs": ["first document", "second document"],
             "language": "English",
-            "embedding_model": "test-model",
+            "embedding_model": "cl-nagoya/ruri-v3-30m",
             "representation_model": ["KeyBERTInspired"],
             "prompt": None,
             "nr_topics": 0,
@@ -124,9 +124,9 @@ def test_cache_distinguishes_representation_order(model_cache):
     assert len(computations) == 2
 
 
-def test_five_sessions_share_computation_and_keep_labels_separate(model_cache):
+def test_eight_sessions_share_computation_and_keep_labels_separate(model_cache):
     load, _, computations = model_cache
-    ready = Barrier(5)
+    ready = Barrier(8)
 
     def session(user):
         ready.wait(timeout=5)
@@ -134,13 +134,13 @@ def test_five_sessions_share_computation_and_keep_labels_separate(model_cache):
         result[1].custom_labels_[0] = f"user {user}"
         return result
 
-    with ThreadPoolExecutor(max_workers=5) as pool:
-        results = list(pool.map(session, range(5)))
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        results = list(pool.map(session, range(8)))
 
     assert len(computations) == 1
     assert len({result[0] for result in results}) == 1
     assert [result[1].custom_labels_ for result in results] == [
-        [f"user {user}"] for user in range(5)
+        [f"user {user}"] for user in range(8)
     ]
 
 
