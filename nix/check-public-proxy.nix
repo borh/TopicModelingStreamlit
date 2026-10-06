@@ -3,6 +3,7 @@ let
   publicConfig = import ./public-proxy.nix {
     name = "topic-modeling-gensim";
     upstream = "127.0.0.1:18082";
+    publicUpstream = "127.0.0.1:18083";
   };
   configuration =
     network:

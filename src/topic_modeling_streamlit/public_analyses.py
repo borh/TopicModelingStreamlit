@@ -48,6 +48,7 @@ def publish_analysis(
             with tempfile.NamedTemporaryFile(dir=directory, delete=False) as file:
                 temporary = Path(file.name)
                 file.write(payload)
+                os.fchmod(file.fileno(), 0o640)
             os.replace(temporary, path)
         finally:
             if temporary is not None:
@@ -103,3 +104,8 @@ def publish_button(
                 st.success("Analysis published.")
             except ValueError as exc:
                 st.error(str(exc))
+
+
+if __name__ == "__main__":
+    st.set_page_config(layout="wide")
+    public_view(os.environ["TOPIC_MODELING_APP"])

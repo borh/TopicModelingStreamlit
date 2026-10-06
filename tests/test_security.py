@@ -81,6 +81,7 @@ def test_publishing_is_explicit_bounded_and_atomic(tmp_path, monkeypatch):
     topics = b"topic_id,label\n0,example\n"
     public_analyses.publish_analysis("gensim", "a" * 16, topics, {"topics": topics})
     path = tmp_path / "published/gensim" / f"{'a' * 16}.json"
+    assert path.stat().st_mode & 0o777 == 0o640
     original = path.read_bytes()
     monkeypatch.setattr(public_analyses, "MAX_ANALYSIS_BYTES", 1)
     with pytest.raises(ValueError, match="10 MB"):
@@ -163,3 +164,42 @@ def test_csv_exports_escape_formulas_without_changing_numeric_values():
         "normal",
     ]
     assert [row[1] for row in rows[1:]] == ["-1.0", "0.0", "0.25", "1.0"]
+
+
+def test_read_only_viewer_denies_computation_even_for_campus_clients(monkeypatch):
+    monkeypatch.setenv("TOPIC_MODELING_READ_ONLY", "1")
+    monkeypatch.setattr(
+        st, "context", SimpleNamespace(headers={"X-Topic-Client-IP": "133.1.2.3"})
+    )
+    assert not security.full_access()
+    with pytest.raises(PermissionError):
+        security.require_compute_access()
+
+
+def test_lightweight_viewer_does_not_import_model_libraries(tmp_path, monkeypatch):
+    import os
+    import subprocess
+    import sys
+
+    monkeypatch.chdir(tmp_path)
+    topics = b"topic_id,label\n0,example\n"
+    public_analyses.publish_analysis("gensim", "a" * 16, topics, {"topics": topics})
+    code = """
+import sys
+from streamlit.testing.v1 import AppTest
+app = AppTest.from_file(sys.argv[1], default_timeout=20).run()
+assert not app.exception
+assert app.dataframe[0].value.label.tolist() == ['example']
+assert 'torch' not in sys.modules
+assert 'gensim' not in sys.modules
+assert 'bertopic' not in sys.modules
+"""
+    subprocess.run(
+        [sys.executable, "-c", code, str(APP_DIR / "public_analyses.py")],
+        check=True,
+        env={
+            **os.environ,
+            "TOPIC_MODELING_READ_ONLY": "1",
+            "TOPIC_MODELING_APP": "gensim",
+        },
+    )

@@ -18,6 +18,8 @@ CLIENT_IP_HEADER = "X-Topic-Client-IP"
 
 
 def full_access() -> bool:
+    if os.environ.get("TOPIC_MODELING_READ_ONLY") == "1":
+        return False
     if os.environ.get("TOPIC_MODELING_PUBLIC") != "1":
         return True
     try:

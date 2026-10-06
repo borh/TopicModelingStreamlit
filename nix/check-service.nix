@@ -40,6 +40,21 @@ assert bertopic.environment.TOPIC_MODELING_PUBLIC == "1";
 assert bertopic.serviceConfig.MemoryMax == "12G";
 assert bertopic.serviceConfig.CPUQuota == "200%";
 assert bertopic.serviceConfig.TasksMax == 256;
+assert
+  config.systemd.services.topic-modeling-bertopic-public.environment.TOPIC_MODELING_READ_ONLY == "1";
+assert
+  config.systemd.services.topic-modeling-gensim-public.environment.TOPIC_MODELING_APP == "gensim";
+assert lib.hasInfix "--server.port=3333"
+  config.systemd.services.topic-modeling-bertopic-public.serviceConfig.ExecStart;
+assert lib.hasInfix "--server.baseUrlPath=topic-modeling-gensim"
+  config.systemd.services.topic-modeling-gensim-public.serviceConfig.ExecStart;
+assert config.systemd.services.topic-modeling-gensim-public.serviceConfig.MemoryMax == "1G";
+assert
+  config.systemd.services.topic-modeling-gensim-public.serviceConfig.User == "topic-modeling-public";
+assert config.systemd.services.topic-modeling-gensim-public.serviceConfig.StateDirectory == [ ];
+assert config.systemd.services.topic-modeling-gensim-public.serviceConfig.ReadWritePaths == [ ];
+assert builtins.elem "/var/lib/topic-modeling/cache"
+  config.systemd.services.topic-modeling-gensim-public.serviceConfig.InaccessiblePaths;
 assert lib.hasInfix "--client.showErrorDetails=none" bertopic.serviceConfig.ExecStart;
 assert lib.hasInfix "--server.maxUploadSize=1" gensim.serviceConfig.ExecStart;
 pkgs.runCommand "topic-modeling-service-contracts" { } "touch $out"

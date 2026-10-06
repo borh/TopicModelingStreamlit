@@ -54,7 +54,7 @@ let
       "standard-ebooks-selection"
     ];
   };
-  apps = {
+  fullApps = {
     bertopic = {
       port = 3331;
       file = "bertopic_app.py";
@@ -66,6 +66,18 @@ let
       file = "gensim_app.py";
     };
   };
+  apps =
+    fullApps
+    // lib.optionalAttrs cfg.publicAccess (
+      lib.mapAttrs' (
+        name: app:
+        lib.nameValuePair "${name}-public" {
+          port = app.port + 2;
+          file = "public_analyses.py";
+          publicApp = name;
+        }
+      ) fullApps
+    );
 in
 {
   options.services.topic-modeling = {
@@ -97,7 +109,19 @@ in
       isSystemUser = true;
       group = "topic-modeling";
     };
+    users.users.topic-modeling-public = lib.mkIf cfg.publicAccess {
+      isSystemUser = true;
+      group = "topic-modeling";
+    };
     users.groups.topic-modeling = { };
+    systemd.tmpfiles.rules = lib.optionals cfg.publicAccess (
+      map (directory: "d ${directory} 0750 topic-modeling topic-modeling -") [
+        state
+        "${state}/cache"
+        "${state}/huggingface"
+        "${state}/published"
+      ]
+    );
     systemd.services = {
       topic-modeling-prepare = {
         description = "Install the pinned topic modeling Python environment";
@@ -131,12 +155,27 @@ in
           pkgs.python313
         ];
         path = runtime.packages;
-        inherit environment;
+        environment =
+          environment
+          // lib.optionalAttrs (app ? publicApp) {
+            TOPIC_MODELING_READ_ONLY = "1";
+            TOPIC_MODELING_APP = app.publicApp;
+          };
         serviceConfig = serviceConfig // {
-          MemoryHigh = "8G";
-          MemoryMax = "12G";
-          CPUQuota = "200%";
-          TasksMax = 256;
+          User = if app ? publicApp then "topic-modeling-public" else "topic-modeling";
+          SupplementaryGroups = lib.optionals (!(app ? publicApp)) serviceConfig.SupplementaryGroups;
+          PrivateDevices = app ? publicApp;
+          StateDirectory = if app ? publicApp then [ ] else "topic-modeling";
+          ReadWritePaths = if app ? publicApp then [ ] else [ state ];
+          ReadOnlyPaths = lib.optionals (app ? publicApp) [ state ];
+          InaccessiblePaths = lib.optionals (app ? publicApp) [
+            "${state}/cache"
+            "${state}/huggingface"
+          ];
+          MemoryHigh = if app ? publicApp then "768M" else "8G";
+          MemoryMax = if app ? publicApp then "1G" else "12G";
+          CPUQuota = if app ? publicApp then "100%" else "200%";
+          TasksMax = if app ? publicApp then 64 else 256;
           ProtectKernelTunables = true;
           ProtectControlGroups = true;
           RestrictSUIDSGID = true;
@@ -145,7 +184,7 @@ in
             "AF_INET"
             "AF_INET6"
           ];
-          ExecStart = "${state}/venv/bin/python -m streamlit run ${source}/src/topic_modeling_streamlit/${app.file} --server.headless=true --server.address=127.0.0.1 --server.port=${toString app.port} --server.baseUrlPath=topic-modeling-${name} --server.fileWatcherType=none --browser.gatherUsageStats=false --client.showErrorDetails=none --server.maxUploadSize=1 --server.maxMessageSize=16";
+          ExecStart = "${state}/venv/bin/python -m streamlit run ${source}/src/topic_modeling_streamlit/${app.file} --server.headless=true --server.address=127.0.0.1 --server.port=${toString app.port} --server.baseUrlPath=topic-modeling-${app.publicApp or name} --server.fileWatcherType=none --browser.gatherUsageStats=false --client.showErrorDetails=none --server.maxUploadSize=1 --server.maxMessageSize=16";
           Restart = "on-failure";
           RestartSec = 5;
         };
