@@ -37,6 +37,10 @@
       checks.x86_64-linux.bundled-brotli = import ./nix/check-brotli.nix {
         pkgs = import nixpkgs { system = "x86_64-linux"; };
       };
+      checks.x86_64-linux.brotli-patch-phase =
+        (import ./nix/check-brotli-patches.nix {
+          pkgs = import nixpkgs { system = "x86_64-linux"; };
+        }).check;
       checks.x86_64-linux.public-proxy = import ./nix/check-public-proxy.nix {
         pkgs = import nixpkgs { system = "x86_64-linux"; };
       };

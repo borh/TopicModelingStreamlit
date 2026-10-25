@@ -7,7 +7,7 @@ let
     if lib.versionAtLeast upstreamBrotli.version minimumBrotli then
       upstreamBrotli
     else
-      upstreamBrotli.overrideAttrs (_old: {
+      upstreamBrotli.overrideAttrs (old: {
         version = minimumBrotli;
         src = pkgs.fetchFromGitHub {
           owner = "google";
@@ -15,6 +15,9 @@ let
           tag = "v${minimumBrotli}";
           hash = "sha256-llY72cYffDv0ugsH0p89xIPEbElV4L8u7U/Fe8hT3gI=";
         };
+        patches = lib.filter (
+          patch: !(lib.hasInfix "0ed4268a" (patch.name or "") || lib.hasInfix "0ed4268a" (toString patch))
+        ) (old.patches or [ ]);
       });
   freetype = pkgs.freetype.override { inherit brotli; };
   arrow-cpp = pkgs.arrow-cpp.override { inherit brotli; };
