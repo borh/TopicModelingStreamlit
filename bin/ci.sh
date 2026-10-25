@@ -5,6 +5,7 @@ uv run --group dev --locked ruff check src tests
 uv run --group dev --locked ruff format --check src tests
 uv run --group dev --locked mypy --disable-error-code=import-untyped --show-error-context --check-untyped-defs src tests
 uv run --group dev --locked pytest -q \
+  tests/test_bundled_brotli.py \
   tests/test_data_lib.py \
   tests/test_gensim_features.py \
   tests/test_gensim_app.py \

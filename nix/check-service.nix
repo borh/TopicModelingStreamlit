@@ -31,7 +31,7 @@ assert lib.hasInfix "--locked --no-dev --no-editable --extra cuda" prepare.scrip
 assert lib.hasInfix "--no-install-package pillow" prepare.script;
 assert lib.hasInfix "--no-install-package pyarrow" prepare.script;
 assert lib.hasInfix "uv pip install" prepare.script;
-assert lib.hasInfix "topic-modeling-brotli-1.2.1-wheels" prepare.script;
+assert lib.hasInfix "topic-modeling-brotli-fixed-wheels" prepare.script;
 assert lib.hasInfix "--force-reinstall" prepare.script;
 assert bertopic.requires == [ "topic-modeling-prepare.service" ];
 assert lib.hasInfix "--server.address=127.0.0.1" bertopic.serviceConfig.ExecStart;

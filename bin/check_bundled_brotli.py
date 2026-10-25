@@ -8,11 +8,23 @@ import subprocess
 import sys
 import tempfile
 import zipfile
+from collections.abc import Callable
 from pathlib import Path
 
-BROTLI_FILE = re.compile(r"libbrotli(?:dec|common)[^/]*\.so[^/]*")
-STORE_VERSION = re.compile(r"/brotli-(\d+\.\d+\.\d+)/")
+MINIMUM = (1, 2, 1)
+BROTLI = re.compile(r"libbrotli(?:dec|common)")
+STORE_COMPONENT = re.compile(r"(?:^|-)brotli-(\d+(?:\.\d+)+)(?:-|$)")
+FILENAME_VERSION = re.compile(r"\.so\.(\d+(?:\.\d+)+)$")
 RESOLVED = re.compile(r"=>\s+(/\S+)")
+
+Ldd = Callable[[Path], str]
+
+
+def run_ldd(path: Path) -> str:
+    result = subprocess.run(
+        ["ldd", str(path)], capture_output=True, text=True, check=False
+    )
+    return result.stdout + result.stderr
 
 
 def elf_files(root: Path) -> list[Path]:
@@ -30,46 +42,99 @@ def elf_files(root: Path) -> list[Path]:
     return found
 
 
-def brotli_dependencies(path: Path) -> list[str]:
-    result = subprocess.run(
-        ["ldd", str(path)], capture_output=True, text=True, check=False
-    )
-    return [
-        line.strip()
-        for line in (result.stdout + result.stderr).splitlines()
-        if BROTLI_FILE.search(line)
-    ]
+def brotli_lines(path: Path, ldd: Ldd) -> list[str]:
+    return [line.strip() for line in ldd(path).splitlines() if BROTLI.search(line)]
 
 
-def audit(root: Path, label: str) -> list[str]:
+def parse_version(resolved: str) -> tuple[int, ...] | None:
+    versions: set[tuple[int, ...]] = set()
+    for part in Path(resolved).parts:
+        match = STORE_COMPONENT.search(part)
+        if match:
+            versions.add(tuple(map(int, match.group(1).split("."))))
+    match = FILENAME_VERSION.search(Path(resolved).name)
+    if match:
+        versions.add(tuple(map(int, match.group(1).split("."))))
+    if len(versions) != 1:
+        return None
+    return versions.pop()
+
+
+def dependency_failure(line: str) -> str | None:
+    if "not found" in line:
+        return "unresolved Brotli dependency"
+    match = RESOLVED.search(line)
+    if not match:
+        return "Brotli dependency without a path"
+    resolved = match.group(1)
+    version = parse_version(resolved)
+    if version is None:
+        return f"unrecognised Brotli provenance: {resolved}"
+    if version < MINIMUM:
+        return f"Brotli {'.'.join(map(str, version))} below 1.2.1: {resolved}"
+    return None
+
+
+def package_for(path: Path, root: Path) -> str | None:
+    parts = path.relative_to(root).parts
+    if not parts:
+        return None
+    if parts[0] == "PIL" or parts[0].startswith("pillow.libs"):
+        return "pillow"
+    if parts[0] == "pyarrow":
+        return "pyarrow"
+    return None
+
+
+def is_anchor(package: str, path: Path, root: Path) -> bool:
+    if package == "pillow":
+        relative = path.relative_to(root).as_posix()
+        return relative.startswith("PIL/_imagingft")
+    if package == "pyarrow":
+        name = path.name
+        return name.startswith(("lib.cpython", "libarrow.so", "libparquet.so"))
+    return False
+
+
+def audit_tree(
+    root: Path,
+    label: str,
+    ldd: Ldd = run_ldd,
+    required: str | None = None,
+) -> list[str]:
     failures = []
-    bundled = {path.resolve() for path in root.rglob("*") if "libbrotli" in path.name}
-    for path in sorted(bundled):
-        if path.name.endswith(".so.1.2.0"):
-            failures.append(f"{label}: bundled vulnerable {path.name}")
-
-    dependencies = []
+    groups: dict[str, list[Path]] = {}
     for path in elf_files(root):
-        dependencies.extend(brotli_dependencies(path))
+        package = package_for(path, root)
+        if package:
+            groups.setdefault(package, []).append(path)
 
-    if not dependencies:
-        failures.append(f"{label}: no resolved Brotli decoder")
+    if required and required not in groups:
+        failures.append(f"{label}: no {required} ELF found")
+    if not groups:
+        failures.append(f"{label}: no Pillow or PyArrow ELF found")
         return failures
 
-    seen = set()
-    for line in dependencies:
-        match = RESOLVED.search(line)
-        resolved = str(Path(match.group(1)).resolve()) if match else line
-        if resolved in seen:
-            continue
-        seen.add(resolved)
-        version = STORE_VERSION.search(resolved)
-        if (
-            version and tuple(map(int, version.group(1).split("."))) < (1, 2, 1)
-        ) or resolved.endswith(".so.1.2.0"):
-            failures.append(f"{label}: {resolved}")
-        else:
-            print(f"{label}: {resolved}")
+    for package, files in sorted(groups.items()):
+        anchors = [path for path in files if is_anchor(package, path, root)]
+        if not anchors and package == "pyarrow":
+            failures.append(f"{label}: {package}: no auditable extension")
+        for anchor in anchors:
+            lines = brotli_lines(anchor, ldd)
+            if not lines:
+                failures.append(
+                    f"{label}: {package} {anchor.name}: no resolved Brotli decoder"
+                )
+            for line in lines:
+                failure = dependency_failure(line)
+                if failure:
+                    failures.append(f"{label}: {package} {anchor.name}: {failure}")
+        for path in files:
+            if "libbrotli" not in path.name:
+                continue
+            version = parse_version(path.name)
+            if version is None or version < MINIMUM:
+                failures.append(f"{label}: {package}: bundled {path.name}")
     return failures
 
 
@@ -86,9 +151,16 @@ def main(argv: list[str]) -> int:
                 root.mkdir()
                 with zipfile.ZipFile(source) as archive:
                     archive.extractall(root)
-                failures.extend(audit(root, source.name))
+                required = (
+                    "pillow"
+                    if source.name.startswith("pillow-")
+                    else "pyarrow"
+                    if source.name.startswith("pyarrow-")
+                    else None
+                )
+                failures.extend(audit_tree(root, source.name, required=required))
             elif source.is_dir():
-                failures.extend(audit(source, source.name))
+                failures.extend(audit_tree(source, source.name))
             else:
                 failures.append(f"{source}: not a wheel or directory")
     for failure in failures:
