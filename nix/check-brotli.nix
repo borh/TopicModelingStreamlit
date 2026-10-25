@@ -8,6 +8,10 @@ pkgs.runCommand "topic-modeling-bundled-brotli"
       pkgs.python3
       pkgs.glibc.bin
     ];
+    buildInputs = [
+      fixed.pillow
+      fixed.pyarrow
+    ];
   }
   ''
     python ${../bin/check_bundled_brotli.py} ${fixed.wheelhouse}/*.whl > $out
