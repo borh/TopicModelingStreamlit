@@ -8,6 +8,7 @@
 let
   cfg = config.services.topic-modeling;
   runtime = import ./runtime.nix { inherit pkgs; };
+  brotliFix = import ./brotli-fix.nix { inherit pkgs; };
   state = "/var/lib/topic-modeling";
   environment =
     runtime.environment
@@ -130,6 +131,7 @@ in
         restartTriggers = [
           source
           pkgs.python313
+          brotliFix.wheelhouse
         ];
         path = runtime.packages;
         inherit environment;
@@ -139,7 +141,8 @@ in
           TimeoutStartSec = "30min";
         };
         script = ''
-          uv sync --locked --no-dev --no-editable --extra ${cfg.accelerator} --project ${source}
+          uv sync --locked --no-dev --no-editable --extra ${cfg.accelerator} --no-install-package pillow --no-install-package pyarrow --project ${source}
+          uv pip install --python "$UV_PROJECT_ENVIRONMENT/bin/python" --no-deps --no-index --force-reinstall ${brotliFix.wheelhouse}/*.whl
         '';
       };
     }

@@ -28,6 +28,11 @@ let
   lib = nixpkgs.lib;
 in
 assert lib.hasInfix "--locked --no-dev --no-editable --extra cuda" prepare.script;
+assert lib.hasInfix "--no-install-package pillow" prepare.script;
+assert lib.hasInfix "--no-install-package pyarrow" prepare.script;
+assert lib.hasInfix "uv pip install" prepare.script;
+assert lib.hasInfix "topic-modeling-brotli-1.2.1-wheels" prepare.script;
+assert lib.hasInfix "--force-reinstall" prepare.script;
 assert bertopic.requires == [ "topic-modeling-prepare.service" ];
 assert lib.hasInfix "--server.address=127.0.0.1" bertopic.serviceConfig.ExecStart;
 assert lib.hasInfix "--server.baseUrlPath=topic-modeling-bertopic" bertopic.serviceConfig.ExecStart;
